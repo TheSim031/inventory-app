@@ -1,12 +1,13 @@
 import { sheets, spreadsheetId, SHEET_ITEMS } from '@/lib/googleSheets';
 import { NextResponse } from 'next/server';
-import pdfParse from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 
 export async function POST(request: Request) {
   if (!sheets || !spreadsheetId) {
     return NextResponse.json({ error: 'Google Sheets API not configured' }, { status: 503 });
   }
 
+  let parser: PDFParse | null = null;
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -15,8 +16,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const pdfData = await pdfParse(fileBuffer);
+    const data = new Uint8Array(await file.arrayBuffer());
+    parser = new PDFParse({ data });
+    const pdfData = await parser.getText();
     const text = pdfData.text;
 
     // --- Parse the raw text into rows ---
@@ -73,5 +75,7 @@ export async function POST(request: Request) {
   } catch (err: any) {
     console.error('Error processing PDF:', err.message);
     return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${err.message}` }, { status: 500 });
+  } finally {
+    await parser?.destroy().catch(() => {});
   }
 }
