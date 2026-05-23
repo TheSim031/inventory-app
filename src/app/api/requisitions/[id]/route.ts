@@ -2,13 +2,17 @@ import { sheets, spreadsheetId, SHEET_REQUISITIONS, SHEET_ITEMS } from '@/lib/go
 import { NextResponse } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
   if (!sheets || !spreadsheetId) {
     return NextResponse.json({ error: 'Google Sheets API not configured' }, { status: 503 });
   }
 
   try {
-    const id = params.id;
     const body = await request.json();
     const { status } = body;
 
@@ -119,7 +123,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     
     if (error.message.includes('มีไม่พอ') || error.message.includes('ไม่พบสินค้า')) {
       sendLineNotification('OUT_OF_STOCK', {
-        id: params.id,
+        id,
         message: error.message
       }).catch(console.error);
       return NextResponse.json({ error: error.message }, { status: 400 });
