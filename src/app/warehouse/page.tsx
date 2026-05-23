@@ -3,11 +3,31 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 import { useRouter } from 'next/navigation';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import styles from './warehouse.module.css';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+/* ─── Domain types ─── */
+type RequisitionItem = { item_name: string; quantity: number };
+type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
+type Requisition = {
+  id: string;
+  created_at: string;
+  requester_name: string;
+  department: string;
+  purpose: string;
+  status: RequisitionStatus;
+  items: RequisitionItem[];
+};
+type Item = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  stock: number;
+};
 
 /* ─── Toast System ─── */
 type ToastType = 'success' | 'error' | 'info';
@@ -51,7 +71,7 @@ function useToast() {
 
 /* ─── Main Page ─── */
 export default function WarehousePage() {
-  const { data: requisitions, error, mutate } = useSWR('/api/requisitions', fetcher, { refreshInterval: 5000 });
+  const { data: requisitions, error, mutate } = useSWR<Requisition[]>('/api/requisitions', fetcher, { refreshInterval: 5000 });
   const [processing, setProcessing] = useState<string | null>(null);
   const router = useRouter();
   const { toasts, add: addToast, remove: removeToast } = useToast();
@@ -77,7 +97,7 @@ export default function WarehousePage() {
     router.push('/');
   };
 
-  const handleComplete = async (req: any) => {
+  const handleComplete = async (req: Requisition) => {
     if (!confirm(`ยืนยันการจัดเตรียมพัสดุสำหรับใบเบิก #${req.id} ?`)) return;
     setProcessing(req.id);
     try {
@@ -101,7 +121,7 @@ export default function WarehousePage() {
     setProcessing(null);
   };
 
-  const handleReject = async (req: any) => {
+  const handleReject = async (req: Requisition) => {
     if (!confirm(`ต้องการยกเลิกใบเบิก #${req.id} หรือไม่?`)) return;
     setProcessing(req.id);
     try {
@@ -173,12 +193,16 @@ export default function WarehousePage() {
           return;
         }
 
-        const items = data.map((row: any) => ({
-          code: row['รหัสสินค้า'] || row['Code'] || row['code'] || row['ID'] || '',
-          name: row['ชื่อสินค้า'] || row['Name'] || row['name'] || '',
-          category: row['ประเภท'] || row['Category'] || row['category'] || '',
-          stock: parseInt(row['คงเหลือ'] || row['สต๊อก'] || row['Stock'] || row['stock'] || '0', 10),
-        }));
+        const rows = data as Array<Record<string, unknown>>;
+        const items = rows.map((row) => {
+          const s = (v: unknown): string => (v == null ? '' : String(v));
+          return {
+            code: s(row['รหัสสินค้า'] || row['Code'] || row['code'] || row['ID']),
+            name: s(row['ชื่อสินค้า'] || row['Name'] || row['name']),
+            category: s(row['ประเภท'] || row['Category'] || row['category']),
+            stock: parseInt(s(row['คงเหลือ'] || row['สต๊อก'] || row['Stock'] || row['stock']) || '0', 10),
+          };
+        });
 
         const res = await fetch('/api/items/bulk', {
           method: 'POST',
@@ -241,7 +265,7 @@ export default function WarehousePage() {
     if (pdfRef.current) pdfRef.current.value = '';
   };
 
-  const generatePickListAndLabel = (req: any) => {
+  const generatePickListAndLabel = (req: Requisition) => {
     const docPick = new jsPDF();
     docPick.setFontSize(18);
     docPick.text(`Pick List - Requisition #${req.id}`, 14, 20);
@@ -251,13 +275,13 @@ export default function WarehousePage() {
     docPick.text(`Purpose: ${req.purpose}`, 14, 46);
     docPick.text(`Date: ${new Date(req.created_at).toLocaleString()}`, 14, 54);
 
-    const tableData = req.items.map((item: any, index: number) => [
+    const tableData = req.items.map((item, index) => [
       index + 1,
       item.item_name,
-      item.quantity
+      item.quantity,
     ]);
 
-    (docPick as any).autoTable({
+    autoTable(docPick, {
       startY: 60,
       head: [['#', 'Item Name', 'Quantity']],
       body: tableData,
@@ -268,7 +292,7 @@ export default function WarehousePage() {
     const docLabel = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
-      format: [100, 150]
+      format: [100, 150],
     });
 
     docLabel.setFontSize(16);
@@ -280,7 +304,7 @@ export default function WarehousePage() {
     docLabel.setFontSize(12);
     docLabel.text('Items:', 10, 65);
     let y = 75;
-    req.items.forEach((item: any) => {
+    req.items.forEach((item) => {
       docLabel.text(`- ${item.item_name} x${item.quantity}`, 15, y);
       y += 8;
     });
@@ -450,7 +474,7 @@ export default function WarehousePage() {
               </tr>
             </thead>
             <tbody>
-              {requisitions.map((req: any) => (
+              {requisitions.map((req) => (
                 <tr key={req.id}>
                   <td>#{req.id}</td>
                   <td>{new Date(req.created_at).toLocaleString()}</td>
@@ -460,7 +484,7 @@ export default function WarehousePage() {
                   </td>
                   <td>
                     <ul className={styles.itemList}>
-                      {req.items.map((item: any, i: number) => (
+                      {req.items.map((item, i) => (
                         <li key={i}>{item.item_name} <span className={styles.qty}>x{item.quantity}</span></li>
                       ))}
                     </ul>
@@ -525,7 +549,7 @@ function ItemsTable({
   onMutateReady: (fn: () => void) => void;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }) {
-  const { data: items, error, mutate } = useSWR('/api/items', fetcher, { refreshInterval: 10000 });
+  const { data: items, error, mutate } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 10000 });
 
   // Expose mutate to parent
   useEffect(() => {
@@ -578,7 +602,7 @@ function ItemsTable({
             </tr>
           </thead>
           <tbody>
-            {items.map((item: any) => (
+            {items.map((item) => (
               <tr key={item.id}>
                 <td><code style={{ fontSize: 13 }}>{item.code}</code></td>
                 <td>{item.name}</td>
@@ -593,7 +617,7 @@ function ItemsTable({
             {items.length === 0 && (
               <tr>
                 <td colSpan={4} className={styles.emptyState}>
-                  ยังไม่มีรายการสินค้า — ลองกด "เพิ่มสินค้าด้วยตนเอง" หรืออัปโหลด Excel/PDF
+                  ยังไม่มีรายการสินค้า — ลองกด &quot;เพิ่มสินค้าด้วยตนเอง&quot; หรืออัปโหลด Excel/PDF
                 </td>
               </tr>
             )}

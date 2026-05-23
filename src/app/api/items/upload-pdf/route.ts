@@ -72,9 +72,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ success: true, count: items.length });
-  } catch (err: any) {
-    console.error('Error processing PDF:', err.message);
-    return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${err.message}` }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Error processing PDF:', message);
+    return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${message}` }, { status: 500 });
   } finally {
     await parser?.destroy().catch(() => {});
   }

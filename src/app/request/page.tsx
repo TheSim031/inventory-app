@@ -90,7 +90,8 @@ export default function RequestPage() {
       if (!entry) return prev;
       const next = entry.quantity + delta;
       if (next <= 0) {
-        const { [id]: _, ...rest } = prev;
+        const rest = { ...prev };
+        delete rest[id];
         return rest;
       }
       if (next > entry.maxStock) return prev;
@@ -100,7 +101,8 @@ export default function RequestPage() {
 
   const removeFromCart = (id: string) => {
     setCart((prev) => {
-      const { [id]: _, ...rest } = prev;
+      const rest = { ...prev };
+      delete rest[id];
       return rest;
     });
   };
@@ -285,7 +287,7 @@ export default function RequestPage() {
               )}
               {showSuggestions && search.trim() && suggestions.length === 0 && (
                 <ul className={styles.suggestionList}>
-                  <li className={styles.suggestionEmpty}>ไม่พบรายการที่ตรงกับ "{search}"</li>
+                  <li className={styles.suggestionEmpty}>ไม่พบรายการที่ตรงกับ &quot;{search}&quot;</li>
                 </ul>
               )}
             </div>

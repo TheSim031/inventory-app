@@ -2,6 +2,19 @@ import { sheets, spreadsheetId, SHEET_REQUISITIONS, SHEET_REQUISITION_ITEMS } fr
 import { NextResponse } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
+type RequisitionItemInput = {
+  item_name?: string;
+  id?: string;
+  quantity: number;
+};
+
+type CreateRequisitionBody = {
+  department: string;
+  requester_name: string;
+  purpose: string;
+  items: RequisitionItemInput[];
+};
+
 export async function GET() {
   if (!sheets || !spreadsheetId) {
     return NextResponse.json([]);
@@ -20,14 +33,14 @@ export async function GET() {
 
     // Map items (skip header)
     // RequisitionItems schema: ReqID, ItemName, Quantity
-    const reqItemsMap: Record<string, any[]> = {};
+    const reqItemsMap: Record<string, Array<{ item_name: string; quantity: number }>> = {};
     if (reqItemsRows.length > 1) {
       reqItemsRows.slice(1).forEach((row) => {
         const reqId = row[0];
         if (!reqItemsMap[reqId]) reqItemsMap[reqId] = [];
         reqItemsMap[reqId].push({
           item_name: row[1] || '',
-          quantity: parseInt(row[2] || '0', 10)
+          quantity: parseInt(row[2] || '0', 10),
         });
       });
     }
@@ -61,7 +74,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const body = (await request.json()) as Partial<CreateRequisitionBody>;
     const { department, requester_name, purpose, items } = body;
 
     if (!department || !requester_name || !purpose || !items || items.length === 0) {
@@ -84,10 +97,10 @@ export async function POST(request: Request) {
     });
 
     // 2. Add to RequisitionItems sheet
-    const itemsValues = items.map((item: any) => [
+    const itemsValues = items.map((item) => [
       newReqId,
       item.item_name || item.id, // we might receive item_name if we change the frontend
-      item.quantity
+      item.quantity,
     ]);
 
     await sheets.spreadsheets.values.append({

@@ -29,7 +29,7 @@ export default function LoginPage() {
         const data = await res.json();
         setError(data.error || 'Login failed');
       }
-    } catch (err) {
+    } catch {
       setError('เกิดข้อผิดพลาดในการเชื่อมต่อระบบ');
     }
     setLoading(false);

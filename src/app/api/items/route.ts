@@ -70,10 +70,11 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, id: code }, { status: 201 });
-  } catch (err: any) {
-    console.error('Error adding item:', err?.message || err);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Error adding item:', message);
     return NextResponse.json(
-      { error: `Failed to add item: ${err?.message || 'Unknown error'}. Ensure the "${getSheetNames().SHEET_ITEMS}" sheet tab exists.` },
+      { error: `Failed to add item: ${message}. Ensure the "${getSheetNames().SHEET_ITEMS}" sheet tab exists.` },
       { status: 500 }
     );
   }

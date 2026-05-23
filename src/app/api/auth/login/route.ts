@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'เกิดข้อผิดพลาด' }, { status: 500 });
   }
 }

@@ -9,7 +9,30 @@ const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 
 export type NotificationType = 'NEW_REQUISITION' | 'COMPLETED' | 'OUT_OF_STOCK';
 
-export async function sendLineNotification(type: NotificationType, data: any) {
+export type NotificationPayload =
+  | {
+      type: 'NEW_REQUISITION';
+      data: {
+        id: string;
+        requester_name: string;
+        department: string;
+        purpose: string;
+        itemsCount: number;
+      };
+    }
+  | {
+      type: 'COMPLETED';
+      data: { id: string; requester_name: string; department: string };
+    }
+  | {
+      type: 'OUT_OF_STOCK';
+      data: { id: string; message: string };
+    };
+
+export async function sendLineNotification<T extends NotificationType>(
+  type: T,
+  data: Extract<NotificationPayload, { type: T }>['data']
+) {
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
     console.log('[LINE Notify Stub] Missing Token. Would have sent:', type, data);
     return;
@@ -18,15 +41,21 @@ export async function sendLineNotification(type: NotificationType, data: any) {
   let message = '';
 
   switch (type) {
-    case 'NEW_REQUISITION':
-      message = `📦 มีคำขอเบิกพัสดุใหม่ (ID: ${data.id})\nชื่อ: ${data.requester_name}\nแผนก: ${data.department}\nวัตถุประสงค์: ${data.purpose}\nจำนวนรายการ: ${data.itemsCount}`;
+    case 'NEW_REQUISITION': {
+      const d = data as Extract<NotificationPayload, { type: 'NEW_REQUISITION' }>['data'];
+      message = `📦 มีคำขอเบิกพัสดุใหม่ (ID: ${d.id})\nชื่อ: ${d.requester_name}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}`;
       break;
-    case 'COMPLETED':
-      message = `✅ คำขอเบิกพัสดุ (ID: ${data.id}) ของคุณ ${data.requester_name} (${data.department}) จัดเตรียมเสร็จสิ้นแล้ว สามารถมารับได้เลยครับ`;
+    }
+    case 'COMPLETED': {
+      const d = data as Extract<NotificationPayload, { type: 'COMPLETED' }>['data'];
+      message = `✅ คำขอเบิกพัสดุ (ID: ${d.id}) ของคุณ ${d.requester_name} (${d.department}) จัดเตรียมเสร็จสิ้นแล้ว สามารถมารับได้เลยครับ`;
       break;
-    case 'OUT_OF_STOCK':
-      message = `❌ คำขอเบิกพัสดุ (ID: ${data.id}) ไม่สามารถดำเนินการได้: ${data.message}`;
+    }
+    case 'OUT_OF_STOCK': {
+      const d = data as Extract<NotificationPayload, { type: 'OUT_OF_STOCK' }>['data'];
+      message = `❌ คำขอเบิกพัสดุ (ID: ${d.id}) ไม่สามารถดำเนินการได้: ${d.message}`;
       break;
+    }
   }
 
   try {

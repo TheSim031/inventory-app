@@ -118,15 +118,13 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Error updating requisition:', error);
-    
-    if (error.message.includes('มีไม่พอ') || error.message.includes('ไม่พบสินค้า')) {
-      sendLineNotification('OUT_OF_STOCK', {
-        id,
-        message: error.message
-      }).catch(console.error);
-      return NextResponse.json({ error: error.message }, { status: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Error updating requisition:', message);
+
+    if (message.includes('มีไม่พอ') || message.includes('ไม่พบสินค้า')) {
+      sendLineNotification('OUT_OF_STOCK', { id, message }).catch(console.error);
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     return NextResponse.json({ error: 'Failed to update requisition' }, { status: 500 });
