@@ -1,0 +1,350 @@
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  padding-bottom: 6rem; /* Space for sticky button */
+  min-height: 100vh;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding: 1rem 0;
+}
+
+.header h1 {
+  font-size: 1.75rem;
+  color: var(--primary-color);
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.header p {
+  color: var(--text-secondary);
+}
+
+.card {
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.card h3 {
+  margin-bottom: 1.25rem;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--bg-color);
+  padding-bottom: 0.5rem;
+}
+
+.inputGroup {
+  margin-bottom: 1rem;
+}
+
+.inputGroup label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.inputGroup input,
+.inputGroup textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.inputGroup input:focus,
+.inputGroup textarea:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.inputGroup textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.itemRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: var(--bg-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.itemRow:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.itemInfo h4 {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.stockText {
+  font-size: 0.875rem;
+  color: var(--success-color);
+  font-weight: 500;
+}
+
+.outOfStock {
+  font-size: 0.875rem;
+  color: var(--danger-color);
+  font-weight: 500;
+}
+
+.quantityControl {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--surface-color);
+  padding: 0.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.quantityControl button {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.quantityControl button:not(:disabled):hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+.quantityControl button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quantityControl span {
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+
+.submitBtn {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 3rem);
+  max-width: 600px;
+  background: var(--primary-color);
+  color: white;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  font-size: 1.125rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.submitBtn:not(:disabled):hover {
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.submitBtn:disabled {
+  background: var(--text-secondary);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.successCard {
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2rem;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  margin-top: 4rem;
+}
+
+.iconWrapper {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: scaleIn 0.5s ease-out;
+}
+
+.successCard h2 {
+  color: var(--success-color);
+  margin-bottom: 1rem;
+}
+
+.successCard p {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.btnPrimary {
+  background: var(--primary-color);
+  color: white;
+  padding: 0.75rem 2rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btnPrimary:hover {
+  background: var(--primary-hover);
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.categoryText {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: -0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.searchBox {
+  position: relative;
+}
+
+.suggestionList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 20;
+  list-style: none;
+  padding: 0.25rem;
+  margin: 0;
+}
+
+.suggestionItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.suggestionItem:hover {
+  background: var(--bg-color);
+}
+
+.suggestionDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.suggestionDisabled:hover {
+  background: transparent;
+}
+
+.suggestionMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.suggestionName {
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestionCategory {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.suggestionEmpty {
+  padding: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.emptyCart {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  padding: 1.25rem 0;
+}
+
+.removeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--danger-color);
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.25rem;
+  transition: all 0.2s;
+}
+
+.removeBtn:hover {
+  background: var(--danger-color);
+  color: white;
+}

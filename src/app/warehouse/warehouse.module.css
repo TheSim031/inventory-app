@@ -1,0 +1,175 @@
+@import './warehouse-addon.css';
+@import './warehouse-tabs.css';
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  min-height: 100vh;
+}
+
+.header {
+  margin-bottom: 2.5rem;
+}
+
+.header h1 {
+  font-size: 2rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.header p {
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+}
+
+.tableWrapper {
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th {
+  background: var(--bg-color);
+  padding: 1rem 1.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr:hover td {
+  background: var(--bg-color);
+}
+
+.requesterName {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.department {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.itemList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.itemList li {
+  margin-bottom: 0.25rem;
+  font-size: 0.95rem;
+}
+
+.qty {
+  font-weight: 600;
+  color: var(--primary-color);
+  margin-left: 0.5rem;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.statusBadge.pending {
+  background: #FEF3C7;
+  color: #D97706;
+}
+
+.statusBadge.completed {
+  background: #D1FAE5;
+  color: #059669;
+}
+
+.statusBadge.rejected {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.actionButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.btnApprove,
+.btnReject,
+.btnSecondary {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.btnApprove {
+  background: var(--primary-color);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.btnApprove:not(:disabled):hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btnReject {
+  background: transparent;
+  color: var(--danger-color);
+  border: 1px solid var(--danger-color);
+}
+
+.btnReject:not(:disabled):hover {
+  background: var(--danger-color);
+  color: white;
+}
+
+.btnSecondary {
+  background: var(--bg-color);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btnSecondary:hover {
+  background: var(--border-color);
+}
+
+.btnApprove:disabled,
+.btnReject:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 3rem !important;
+  color: var(--text-secondary);
+  font-style: italic;
+}
