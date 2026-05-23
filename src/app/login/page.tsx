@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import styles from './login.module.css';
 
@@ -38,6 +39,7 @@ export default function LoginPage() {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
+        <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
         <div className={styles.icon}>🔒</div>
         <h2>เข้าสู่ระบบคลังสินค้า</h2>
         <p>กรุณากรอกรหัสผ่านเพื่อเข้าถึงระบบจัดการ</p>

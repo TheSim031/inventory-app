@@ -33,9 +33,8 @@ export function getSheets() {
 // e.g. GOOGLE_SHEET_ITEMS=Sheet1  or  GOOGLE_SHEET_ITEMS=สินค้า
 export function getSheetNames() {
   return {
-    SHEET_ITEMS: process.env.GOOGLE_SHEET_ITEMS || 'Items',
-    SHEET_REQUISITIONS: process.env.GOOGLE_SHEET_REQUISITIONS || 'Requisitions',
-    SHEET_REQUISITION_ITEMS: process.env.GOOGLE_SHEET_REQUISITION_ITEMS || 'RequisitionItems',
+    SHEET_ITEMS: process.env.GOOGLE_SHEET_ITEMS || 'สต็อกสินค้า',
+    SHEET_HISTORY: process.env.GOOGLE_SHEET_HISTORY || 'บันทึกเข้า-ออก',
   };
 }
 
@@ -44,6 +43,5 @@ export const sheets = (() => {
   try { return getSheetsClient().sheets; } catch { return null; }
 })();
 export const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID || '';
-export const SHEET_ITEMS = process.env.GOOGLE_SHEET_ITEMS || 'Items';
-export const SHEET_REQUISITIONS = process.env.GOOGLE_SHEET_REQUISITIONS || 'Requisitions';
-export const SHEET_REQUISITION_ITEMS = process.env.GOOGLE_SHEET_REQUISITION_ITEMS || 'RequisitionItems';
+export const SHEET_ITEMS = process.env.GOOGLE_SHEET_ITEMS || 'สต็อกสินค้า';
+export const SHEET_HISTORY = process.env.GOOGLE_SHEET_HISTORY || 'บันทึกเข้า-ออก';

@@ -7,26 +7,29 @@
 
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 
-export type NotificationType = 'NEW_REQUISITION' | 'COMPLETED' | 'OUT_OF_STOCK';
+export type NotificationType = 'OUT_RECORDED' | 'IN_RECORDED' | 'OUT_OF_STOCK';
 
 export type NotificationPayload =
   | {
-      type: 'NEW_REQUISITION';
+      type: 'OUT_RECORDED';
       data: {
-        id: string;
-        requester_name: string;
+        recorder: string;
         department: string;
         purpose: string;
         itemsCount: number;
       };
     }
   | {
-      type: 'COMPLETED';
-      data: { id: string; requester_name: string; department: string };
+      type: 'IN_RECORDED';
+      data: {
+        recorder: string;
+        poRef: string;
+        itemsCount: number;
+      };
     }
   | {
       type: 'OUT_OF_STOCK';
-      data: { id: string; message: string };
+      data: { recorder: string; message: string };
     };
 
 export async function sendLineNotification<T extends NotificationType>(
@@ -41,19 +44,19 @@ export async function sendLineNotification<T extends NotificationType>(
   let message = '';
 
   switch (type) {
-    case 'NEW_REQUISITION': {
-      const d = data as Extract<NotificationPayload, { type: 'NEW_REQUISITION' }>['data'];
-      message = `📦 มีคำขอเบิกพัสดุใหม่ (ID: ${d.id})\nชื่อ: ${d.requester_name}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}`;
+    case 'OUT_RECORDED': {
+      const d = data as Extract<NotificationPayload, { type: 'OUT_RECORDED' }>['data'];
+      message = `📤 บันทึกการเบิกออก\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}`;
       break;
     }
-    case 'COMPLETED': {
-      const d = data as Extract<NotificationPayload, { type: 'COMPLETED' }>['data'];
-      message = `✅ คำขอเบิกพัสดุ (ID: ${d.id}) ของคุณ ${d.requester_name} (${d.department}) จัดเตรียมเสร็จสิ้นแล้ว สามารถมารับได้เลยครับ`;
+    case 'IN_RECORDED': {
+      const d = data as Extract<NotificationPayload, { type: 'IN_RECORDED' }>['data'];
+      message = `📥 บันทึกการรับเข้า\nผู้รับ: ${d.recorder}\nPO/PX: ${d.poRef}\nจำนวนรายการ: ${d.itemsCount}`;
       break;
     }
     case 'OUT_OF_STOCK': {
       const d = data as Extract<NotificationPayload, { type: 'OUT_OF_STOCK' }>['data'];
-      message = `❌ คำขอเบิกพัสดุ (ID: ${d.id}) ไม่สามารถดำเนินการได้: ${d.message}`;
+      message = `❌ ไม่สามารถบันทึกการเบิกได้ (โดย ${d.recorder}): ${d.message}`;
       break;
     }
   }

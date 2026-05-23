@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useRef, useState, useEffect } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
 import styles from './request.module.css';
 
@@ -25,7 +26,7 @@ type Item = {
   stock: number;
 };
 
-type CartEntry = { name: string; quantity: number; maxStock: number };
+type CartEntry = { code: string; name: string; quantity: number; maxStock: number };
 
 export default function RequestPage() {
   const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 5000 });
@@ -77,7 +78,7 @@ export default function RequestPage() {
       if (item.stock <= 0) return prev;
       return {
         ...prev,
-        [item.id]: { name: item.name, quantity: 1, maxStock: item.stock },
+        [item.id]: { code: item.code, name: item.name, quantity: 1, maxStock: item.stock },
       };
     });
     setSearch('');
@@ -124,18 +125,19 @@ export default function RequestPage() {
     if (!canSubmit) return;
 
     setSubmitting(true);
-    const cartItems = Object.entries(cart).map(([id, entry]) => ({
-      item_id: id,
-      item_name: entry.name,
+    const cartItems = Object.values(cart).map((entry) => ({
+      code: entry.code,
+      name: entry.name,
       quantity: entry.quantity,
     }));
 
     try {
-      const res = await fetch('/api/requisitions', {
+      const res = await fetch('/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requester_name: form.requester_name.trim(),
+          type: 'OUT',
+          recorder: form.requester_name.trim(),
           department: resolvedDepartment,
           purpose: form.purpose.trim(),
           items: cartItems,
@@ -146,7 +148,8 @@ export default function RequestPage() {
         setCart({});
         setForm({ department: '', customDepartment: '', requester_name: '', purpose: '' });
       } else {
-        alert('เกิดข้อผิดพลาดในการส่งคำขอเบิก');
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'เกิดข้อผิดพลาดในการส่งคำขอเบิก');
       }
     } catch (err) {
       console.error(err);
@@ -161,6 +164,7 @@ export default function RequestPage() {
   if (success) {
     return (
       <div className={styles.container}>
+        <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
         <div className={styles.successCard}>
           <div className={styles.iconWrapper}>✅</div>
           <h2>ส่งคำขอเบิกเรียบร้อย!</h2>
@@ -175,6 +179,7 @@ export default function RequestPage() {
 
   return (
     <div className={styles.container}>
+      <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
       <header className={styles.header}>
         <h1>เบิกจ่ายพัสดุออนไลน์</h1>
         <p>สะดวกรวดเร็ว อัปเดตแบบเรียลไทม์</p>
