@@ -1,49 +1,110 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getSessionContext } from '@/lib/auth';
+import type { UserRole } from '@/lib/userRole';
 
 /**
- * Auth gating for warehouse + role-specific routes. Replaces the
- * deprecated `middleware` file convention with Next.js 16's `proxy`.
+ * Auth + role gate for every protected page. Next.js 16 replaced
+ * `middleware` with `proxy`, so this file is the single source of truth
+ * for "can this user reach this URL". The MainNav hides menu items the
+ * user shouldn't see, but typing a URL directly would bypass that —
+ * these rules enforce it server-side.
  *
- * Authenticated = either the admin session cookie OR a LINE Login session.
- * Role-specific permission gating (does this role match this page?) will
- * happen at the page level in a later phase — for now we only check
- * "is the user signed in at all".
+ * Order matters: the first matching rule wins, so list more specific
+ * paths (e.g. `/inspect/history`) before less specific ones (`/inspect`).
  *
- * /role-select itself needs auth (no anonymous role-setting), but does
- * NOT require a role to be set yet — that's the whole point of the page.
+ * Rules mirror ROLE_MENU_IDS in src/lib/menu.ts — keep them in sync.
  */
-const PROTECTED_PREFIXES = [
-  '/in',
-  '/out',
-  '/role-select',
-  '/purchasing',
-  '/executive',
-  '/qc',
-  '/inspect',
-  '/admin',
+type Rule = {
+  match: (pathname: string) => boolean;
+  allowed: UserRole[];
+};
+
+const RULES: Rule[] = [
+  // Inspection history — read-only for everyone except Assembly.
+  {
+    match: (p) => p === '/inspect/history' || p.startsWith('/inspect/history/'),
+    allowed: ['WAREHOUSE', 'PURCHASING', 'EXECUTIVE', 'QC'],
+  },
+  // Inspection cleanup — warehouse-only janitor screen.
+  {
+    match: (p) => p === '/inspect/cleanup' || p.startsWith('/inspect/cleanup/'),
+    allowed: ['WAREHOUSE'],
+  },
+  // QC inspection screen itself — must come AFTER /inspect/history|cleanup.
+  { match: (p) => p === '/inspect' || p.startsWith('/inspect/'), allowed: ['QC'] },
+
+  // Warehouse pages
+  { match: (p) => p === '/in' || p.startsWith('/in/'), allowed: ['WAREHOUSE'] },
+  { match: (p) => p === '/out' || p.startsWith('/out/'), allowed: ['WAREHOUSE'] },
+
+  // Requisition (เบิก) — warehouse fulfills, purchasing/assembly request.
+  {
+    match: (p) => p === '/request' || p.startsWith('/request/'),
+    allowed: ['WAREHOUSE', 'PURCHASING', 'ASSEMBLY'],
+  },
+
+  // Role-home placeholder pages — only the matching role belongs here.
+  {
+    match: (p) => p === '/purchasing' || p.startsWith('/purchasing/'),
+    allowed: ['PURCHASING'],
+  },
+  {
+    match: (p) => p === '/executive' || p.startsWith('/executive/'),
+    allowed: ['EXECUTIVE'],
+  },
+  { match: (p) => p === '/qc' || p.startsWith('/qc/'), allowed: ['QC'] },
 ];
+
+/**
+ * Paths that need authentication but don't have a role rule:
+ *   - /role-select: must be signed in, role not required (that's the point)
+ *   - /admin/*    : creator-only, handled separately below
+ */
+function needsAuthOnly(pathname: string): boolean {
+  if (pathname === '/role-select' || pathname.startsWith('/role-select/')) return true;
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) return true;
+  return false;
+}
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const isProtected = PROTECTED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  const rule = RULES.find((r) => r.match(pathname));
+  const authOnly = !rule && needsAuthOnly(pathname);
+  if (!rule && !authOnly) return NextResponse.next();
 
-  if (isProtected) {
-    const hasAdmin = request.cookies.get('auth_session')?.value === 'authenticated';
-    const hasLineUser = !!request.cookies.get('line_user')?.value;
-    const hasCreator =
-      request.cookies.get('creator_session')?.value === 'authenticated';
-    if (!hasAdmin && !hasLineUser && !hasCreator) {
-      return NextResponse.redirect(new URL('/', request.url));
-    }
-    // /admin/* requires creator session specifically — non-creators bounce
-    // back to the landing page (not their role home, to avoid confusion).
-    if (pathname.startsWith('/admin') && !hasCreator) {
-      return NextResponse.redirect(new URL('/', request.url));
-    }
+  const ctx = getSessionContext(request);
+
+  // Not signed in → bounce to landing/login. Preserve the destination
+  // so post-login flow can return here.
+  if (!ctx.isAuthenticated) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/';
+    url.searchParams.set('next', pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // Creator (super-admin) bypasses every role check.
+  if (ctx.isCreator) return NextResponse.next();
+
+  // /admin/* is creator-only — non-creators are denied.
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/403';
+    url.searchParams.set('from', pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // /role-select needs auth but no role — let it through.
+  if (authOnly) return NextResponse.next();
+
+  // Role gate: must have a role AND it must be in the rule's allow-list.
+  if (!ctx.role || !rule!.allowed.includes(ctx.role)) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/403';
+    url.searchParams.set('from', pathname);
+    return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
@@ -53,11 +114,12 @@ export const config = {
   matcher: [
     '/in/:path*',
     '/out/:path*',
-    '/role-select/:path*',
+    '/request/:path*',
+    '/inspect/:path*',
     '/purchasing/:path*',
     '/executive/:path*',
     '/qc/:path*',
-    '/inspect/:path*',
+    '/role-select/:path*',
     '/admin/:path*',
   ],
 };
