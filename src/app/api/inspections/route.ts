@@ -230,6 +230,7 @@ export async function PATCH(request: NextRequest) {
     try {
       await sendLineToRoles(['EXECUTIVE'], `${text}\n\n🗂 รูปทั้งหมด: ${allImages.length} รูป`, {
         images: allImages,
+        maxImages: allImages.length,
       });
     } catch (err) {
       console.error('Notification dispatch error (inspections PATCH):', err);
