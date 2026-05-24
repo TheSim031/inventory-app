@@ -27,6 +27,17 @@ export async function GET() {
     GOOGLE_SPREADSHEET_ID: !!process.env.GOOGLE_SPREADSHEET_ID,
     GOOGLE_SHEET_ITEMS: process.env.GOOGLE_SHEET_ITEMS || '(using default)',
     GOOGLE_SHEET_HISTORY: process.env.GOOGLE_SHEET_HISTORY || '(using default)',
+    // LINE — booleans + lengths only, never values
+    LINE_LOGIN_CHANNEL_ID: !!process.env.LINE_LOGIN_CHANNEL_ID,
+    LINE_LOGIN_CHANNEL_ID_length: process.env.LINE_LOGIN_CHANNEL_ID?.length ?? 0,
+    LINE_LOGIN_CHANNEL_SECRET: !!process.env.LINE_LOGIN_CHANNEL_SECRET,
+    LINE_LOGIN_CHANNEL_SECRET_length: process.env.LINE_LOGIN_CHANNEL_SECRET?.length ?? 0,
+    LINE_CHANNEL_ACCESS_TOKEN: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    LINE_CHANNEL_ACCESS_TOKEN_length: process.env.LINE_CHANNEL_ACCESS_TOKEN?.length ?? 0,
+    LINE_OA_BASIC_ID: !!process.env.LINE_OA_BASIC_ID,
+    LINE_OA_BASIC_ID_value_preview: (process.env.LINE_OA_BASIC_ID || '').slice(0, 4),
+    NEXT_PUBLIC_BASE_URL: !!process.env.NEXT_PUBLIC_BASE_URL,
+    NEXT_PUBLIC_BASE_URL_value: process.env.NEXT_PUBLIC_BASE_URL || '',
   };
 
   const expected = getSheetNames();
