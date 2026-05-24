@@ -1,8 +1,9 @@
 import {
   getSheets,
-  getSheetNames,
   readItemsSheet,
   readHistorySheet,
+  resolveItemsSheetName,
+  resolveHistorySheetName,
   HISTORY_RANGE,
 } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -79,10 +80,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const { sheets, spreadsheetId } = getSheets();
-  const { SHEET_ITEMS, SHEET_HISTORY } = getSheetNames();
 
   if (!sheets || !spreadsheetId) {
     return NextResponse.json({ error: 'Google Sheets API not configured' }, { status: 503 });
+  }
+
+  const SHEET_ITEMS = await resolveItemsSheetName();
+  const SHEET_HISTORY = await resolveHistorySheetName();
+  if (!SHEET_ITEMS || !SHEET_HISTORY) {
+    return NextResponse.json(
+      { error: 'ไม่พบ tab ที่ตรงในสเปรดชีต — ตรวจ env GOOGLE_SHEET_ITEMS / GOOGLE_SHEET_HISTORY' },
+      { status: 500 },
+    );
   }
 
   let body: Partial<HistoryPostBody>;

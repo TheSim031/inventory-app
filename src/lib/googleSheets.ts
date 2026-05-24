@@ -37,6 +37,73 @@ export function getSheetNames() {
   };
 }
 
+// Fallback tab names to try when the configured GOOGLE_SHEET_* env var points
+// to a tab that doesn't exist. Lets the app self-heal when env config drifts.
+const FALLBACK_ITEMS_TABS = ['สต็อกสินค้า', 'Items', 'Stock', 'Inventory'];
+const FALLBACK_HISTORY_TABS = ['ประวัติเข้า-ออก', 'บันทึกเข้า-ออก', 'History'];
+
+// Cached list of actual sheet tabs in the spreadsheet — persists across warm
+// Lambda invocations on Vercel. A cold start (or redeploy) refreshes it.
+let actualTabsCache: string[] | null = null;
+
+async function getActualSheetTabs(): Promise<string[] | null> {
+  if (actualTabsCache) return actualTabsCache;
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties.title',
+    });
+    actualTabsCache = (meta.data.sheets || [])
+      .map((s) => s.properties?.title || '')
+      .filter(Boolean);
+    return actualTabsCache;
+  } catch (error) {
+    console.error('Google Sheets Error (getActualSheetTabs):', error);
+    return null;
+  }
+}
+
+/**
+ * Resolve a configured tab name to one that actually exists in the spreadsheet.
+ * If the configured name exists, use it. Otherwise try the fallback list.
+ * Returns null only if none match. Errors out on a noisy log so deployments
+ * with misconfigured env vars are visible in Vercel logs.
+ */
+async function resolveSheetTab(
+  configured: string,
+  fallbacks: string[],
+): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  // If we can't enumerate (auth issue), fall through to optimistic use of the
+  // configured name — the actual values.get call will produce a clearer error.
+  if (!tabs) return configured;
+  if (tabs.includes(configured)) return configured;
+  for (const f of fallbacks) {
+    if (tabs.includes(f)) {
+      console.warn(
+        `Sheet tab "${configured}" not found; using existing "${f}" instead. ` +
+          `Update GOOGLE_SHEET_* env var to silence this warning.`,
+      );
+      return f;
+    }
+  }
+  console.error(
+    `Google Sheets Error: no matching sheet tab for "${configured}". ` +
+      `Available tabs: ${tabs.join(', ')}`,
+  );
+  return null;
+}
+
+export async function resolveItemsSheetName(): Promise<string | null> {
+  return resolveSheetTab(getSheetNames().SHEET_ITEMS, FALLBACK_ITEMS_TABS);
+}
+
+export async function resolveHistorySheetName(): Promise<string | null> {
+  return resolveSheetTab(getSheetNames().SHEET_HISTORY, FALLBACK_HISTORY_TABS);
+}
+
 /* ─── Items sheet helpers ─── */
 
 export type SheetItemRow = {
@@ -92,11 +159,12 @@ const DATA_START_INDEX = 2; // zero-based → sheet row 3
 
 export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const { SHEET_ITEMS } = getSheetNames();
   if (!sheets || !spreadsheetId) {
     console.error('Google Sheets Error: missing credentials or spreadsheet id');
     return null;
   }
+  const SHEET_ITEMS = await resolveItemsSheetName();
+  if (!SHEET_ITEMS) return null;
 
   let rawRows: unknown[][] = [];
   try {
@@ -217,11 +285,12 @@ export type HistoryRow = {
 
 export async function readHistorySheet(): Promise<HistoryRow[] | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const { SHEET_HISTORY } = getSheetNames();
   if (!sheets || !spreadsheetId) {
     console.error('Google Sheets Error: missing credentials or spreadsheet id');
     return null;
   }
+  const SHEET_HISTORY = await resolveHistorySheetName();
+  if (!SHEET_HISTORY) return null;
 
   let rawRows: unknown[][] = [];
   try {

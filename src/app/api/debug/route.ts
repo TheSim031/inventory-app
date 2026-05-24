@@ -1,4 +1,10 @@
-import { getSheets, getSheetNames, readItemsSheet } from '@/lib/googleSheets';
+import {
+  getSheets,
+  getSheetNames,
+  readItemsSheet,
+  resolveItemsSheetName,
+  resolveHistorySheetName,
+} from '@/lib/googleSheets';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +50,9 @@ export async function GET() {
     const itemsTabFound = actualSheets.includes(expected.SHEET_ITEMS);
     const historyTabFound = actualSheets.includes(expected.SHEET_HISTORY);
 
+    const resolvedItemsTab = await resolveItemsSheetName();
+    const resolvedHistoryTab = await resolveHistorySheetName();
+
     let itemsSample: unknown = null;
     let itemsError: string | null = null;
     try {
@@ -58,9 +67,13 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      ok: itemsTabFound && historyTabFound,
+      ok: (itemsTabFound || !!resolvedItemsTab) && (historyTabFound || !!resolvedHistoryTab),
       env,
       expectedSheetNames: expected,
+      resolvedSheetNames: {
+        items: resolvedItemsTab,
+        history: resolvedHistoryTab,
+      },
       actualSheetTabs: actualSheets,
       tabsMatch: {
         items: itemsTabFound,
