@@ -21,8 +21,9 @@ type Requisition = {
   id: string;
   date: string;
   recorder: string;
-  department: string;
-  purpose: string;
+  department?: string;
+  purpose?: string;
+  poPx?: string;
   status: RequisitionStatus;
   items: RequisitionItem[];
 };
@@ -234,6 +235,7 @@ function PendingRequisitions({
                   {req.department && <span> · {req.department}</span>}
                 </div>
                 {req.purpose && <div className={styles.reqPurpose}>วัตถุประสงค์: {req.purpose}</div>}
+                {req.poPx && <div className={styles.reqPurpose}>PO/PX: {req.poPx}</div>}
                 <ul className={styles.reqItems}>
                   {req.items.map((it, i) => (
                     <li key={i}>

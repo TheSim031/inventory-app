@@ -13,8 +13,9 @@ export type Requisition = {
   id: string;
   date: string;
   recorder: string;
-  department: string;
-  purpose: string;
+  department?: string;
+  purpose?: string;
+  poPx?: string;
   status: RequisitionStatus;
   items: RequisitionItem[];
 };
@@ -49,8 +50,9 @@ export async function GET() {
           id,
           date: r.date,
           recorder: r.recorder,
-          department: r.department,
-          purpose: r.purpose,
+          department: r.department.trim() || undefined,
+          purpose: r.purpose.trim() || undefined,
+          poPx: r.poRef.trim() || undefined,
           status: normalizeStatus(r.status),
           items: [],
         };
