@@ -2,7 +2,6 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { WarehouseNav } from '@/components/WarehouseNav';
 import styles from './out.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -37,8 +36,6 @@ export default function OutPage() {
 
   return (
     <div className={styles.container}>
-      <WarehouseNav />
-
       <header className={styles.header}>
         <h1>
           📤 <span>จัดของตามใบเบิก</span>

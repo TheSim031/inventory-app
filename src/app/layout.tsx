@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { MainNav } from "@/components/MainNav";
+import { CreatorCredit } from "@/components/CreatorCredit";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,17 +29,15 @@ export default function RootLayout({
       <body>
         <header className="company-header">
           <div className="company-header-inner">
-            {/* Logo slot — drop an <Image /> or <img> in here when ready */}
             <div className="company-logo" aria-label="Company logo" />
             <h1 className="company-name">
               บริษัท ไพโอเนียร์ เอ็นจิเนียริ่ง อินเตอร์เนชั่นแนล จำกัด
             </h1>
           </div>
         </header>
+        <MainNav />
         <main className="app-main">{children}</main>
-        <div className="dev-credit" aria-label="Developer credit">
-          pharadon thatdua
-        </div>
+        <CreatorCredit />
       </body>
     </html>
   );

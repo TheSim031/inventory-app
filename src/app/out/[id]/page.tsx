@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { ToastContainer, useToast } from '@/components/Toast';
-import { WarehouseNav } from '@/components/WarehouseNav';
 import styles from './pick.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -152,7 +151,6 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   if (!requisitions) {
     return (
       <div className={styles.container}>
-        <WarehouseNav />
         <div className={styles.loadingState}>กำลังโหลด...</div>
       </div>
     );
@@ -161,7 +159,6 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   if (!requisition) {
     return (
       <div className={styles.container}>
-        <WarehouseNav />
         <div className={styles.errorState}>
           ไม่พบใบเบิก <strong>{id}</strong> — อาจถูกประมวลผลไปแล้ว
         </div>
@@ -175,7 +172,6 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   if (requisition.status !== 'PENDING') {
     return (
       <div className={styles.container}>
-        <WarehouseNav />
         <div className={styles.errorState}>
           ใบเบิก <strong>{id}</strong> ถูกประมวลผลไปแล้ว (สถานะ: {requisition.status})
         </div>
@@ -191,11 +187,7 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   return (
     <div className={styles.container}>
       <ToastContainer toasts={toasts} remove={removeToast} />
-      <div className="no-print">
-        <WarehouseNav />
-      </div>
-
-      <div className={`${styles.headerBar} no-print`}>
+<div className={`${styles.headerBar} no-print`}>
         <div>
           <Link href="/out" className={styles.backLink}>
             ← กลับรายการ

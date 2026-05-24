@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { ToastContainer, useToast } from '@/components/Toast';
-import { WarehouseNav } from '@/components/WarehouseNav';
 import styles from './in.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -116,7 +115,6 @@ export default function InPage() {
   return (
     <div className={styles.container}>
       <ToastContainer toasts={toasts} remove={removeToast} />
-      <WarehouseNav />
 
       <header className={styles.header}>
         <h1>

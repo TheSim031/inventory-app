@@ -1,0 +1,368 @@
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+
+.header h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+
+.header h1 span {
+  color: var(--primary-color);
+}
+
+.header p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.summaryCard {
+  flex: 1 1 130px;
+  background: var(--surface-color);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+
+.summaryCard strong {
+  display: block;
+  font-size: 1.5rem;
+  color: var(--primary-color);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.summaryCard span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.tableCard {
+  background: var(--surface-color);
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--dark-surface);
+  color: #fff;
+  border-bottom: 4px solid var(--primary-color);
+}
+
+.tableHeader h2 {
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.btnAddGroup {
+  background: var(--primary-color);
+  color: #fff;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.btnAddGroup:hover {
+  background: var(--primary-hover);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.table th,
+.table td {
+  padding: 0.85rem 1.25rem;
+  text-align: left;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.table th {
+  background: var(--bg-color);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.table tr:hover td {
+  background: rgba(220, 38, 38, 0.03);
+}
+
+.userCell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.userIdHint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-weight: 500;
+}
+
+.roleBadge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-primary);
+}
+
+.roleBadge[data-role='WAREHOUSE']  { background: rgba(220, 38, 38, 0.12); color: var(--primary-color); }
+.roleBadge[data-role='PURCHASING'] { background: rgba(245, 158, 11, 0.12); color: #B45309; }
+.roleBadge[data-role='EXECUTIVE']  { background: rgba(15, 23, 42, 0.85); color: #fff; }
+.roleBadge[data-role='QC']         { background: rgba(22, 163, 74, 0.12); color: #15803D; }
+.roleBadge[data-role='ASSEMBLY']   { background: rgba(59, 130, 246, 0.12); color: #1D4ED8; }
+
+.tag {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--primary-color);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+}
+
+.btnRowEdit {
+  background: transparent;
+  color: var(--primary-color);
+  border: 1.5px solid var(--primary-color);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.btnRowEdit:hover {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.emptyState {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Edit drawer (full-screen modal) */
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+
+.drawer {
+  background: #fff;
+  border-radius: 1rem;
+  border: 2px solid var(--text-primary);
+  border-top: 6px solid var(--primary-color);
+  padding: 1.75rem;
+  max-width: 540px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.drawer h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.drawerSub {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.25rem;
+}
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.field label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.field select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  outline: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.field select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--bg-color);
+  border-radius: var(--radius-md);
+  padding: 0.6rem;
+  border: 1px solid var(--border-color);
+}
+
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.menuRow:hover {
+  background: rgba(220, 38, 38, 0.05);
+}
+
+.menuRowChild {
+  margin-left: 1.5rem;
+  font-weight: 500;
+  font-size: 0.84rem;
+}
+
+.menuRow input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.menuHint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  line-height: 1.45;
+}
+
+.drawerActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.btnSave {
+  flex: 1;
+  background: var(--primary-color);
+  color: #fff;
+  padding: 0.8rem;
+  border-radius: var(--radius-md);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-red);
+}
+
+.btnSave:not(:disabled):hover {
+  background: var(--primary-hover);
+}
+
+.btnSave:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btnCancel {
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.8rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-color);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.btnCancel:hover {
+  border-color: var(--text-primary);
+}
+
+.errorBanner {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger-color);
+  border: 1px solid var(--danger-color);
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}

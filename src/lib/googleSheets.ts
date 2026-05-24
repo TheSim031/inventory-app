@@ -41,6 +41,8 @@ export function getSheetNames() {
 // to a tab that doesn't exist. Lets the app self-heal when env config drifts.
 const FALLBACK_ITEMS_TABS = ['สต็อกสินค้า', 'Items', 'Stock', 'Inventory'];
 const FALLBACK_HISTORY_TABS = ['ประวัติเข้า-ออก', 'บันทึกเข้า-ออก', 'History'];
+const USERS_SHEET_NAME = 'ผู้ใช้งาน';
+const FALLBACK_USERS_TABS = ['ผู้ใช้งาน', 'Users', 'LineUsers'];
 
 // Cached list of actual sheet tabs in the spreadsheet — persists across warm
 // Lambda invocations on Vercel. A cold start (or redeploy) refreshes it.
@@ -102,6 +104,236 @@ export async function resolveItemsSheetName(): Promise<string | null> {
 
 export async function resolveHistorySheetName(): Promise<string | null> {
   return resolveSheetTab(getSheetNames().SHEET_HISTORY, FALLBACK_HISTORY_TABS);
+}
+
+/**
+ * Lazily ensure the "ผู้ใช้งาน" (Users) tab exists. If missing, create it
+ * with a header row and return its name. This keeps the user-tracking
+ * feature zero-setup — admins don't have to manually add a tab.
+ */
+async function ensureUsersSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_USERS_TABS) {
+      if (tabs.includes(f)) return f;
+    }
+  }
+
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: USERS_SHEET_NAME } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${USERS_SHEET_NAME}!A1:G2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — ทะเบียนผู้ใช้งานระบบ'],
+          [
+            'LINE User ID',
+            'ชื่อแสดงผล',
+            'กลุ่ม (Role)',
+            'เข้าใช้ครั้งแรก',
+            'เข้าใช้ล่าสุด',
+            'เมนูที่กำหนดเอง (JSON)',
+            'หมายเหตุ',
+          ],
+        ],
+      },
+    });
+    // Bust the cached tab list so subsequent reads see the new tab.
+    actualTabsCache = null;
+    return USERS_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureUsersSheet):', error);
+    return null;
+  }
+}
+
+export type UserRow = {
+  sheetRow: number;
+  lineUserId: string;
+  displayName: string;
+  role: string;          // raw — may be empty for users who haven't picked yet
+  firstLogin: string;
+  lastLogin: string;
+  customMenus: string[]; // parsed from JSON column (empty array = no override)
+  notes: string;
+};
+
+const USERS_HEADER_ROW_INDEX = 1; // row 2 (sheet 1-based)
+const USERS_DATA_START_INDEX = 2; // row 3
+
+function parseCustomMenus(raw: string): string[] {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+      return parsed as string[];
+    }
+  } catch {
+    // Fall through — malformed JSON treated as empty
+  }
+  return [];
+}
+
+export async function readUsersSheet(): Promise<UserRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureUsersSheet();
+  if (!tab) return null;
+
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:G`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readUsersSheet):', error);
+    return null;
+  }
+
+  if (rawRows.length <= USERS_HEADER_ROW_INDEX) return [];
+
+  const result: UserRow[] = [];
+  for (let i = USERS_DATA_START_INDEX; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const lineUserId = String(row[0] ?? '').trim();
+    if (!lineUserId) continue;
+    result.push({
+      sheetRow: i + 1,
+      lineUserId,
+      displayName: String(row[1] ?? '').trim(),
+      role: String(row[2] ?? '').trim(),
+      firstLogin: String(row[3] ?? '').trim(),
+      lastLogin: String(row[4] ?? '').trim(),
+      customMenus: parseCustomMenus(String(row[5] ?? '')),
+      notes: String(row[6] ?? '').trim(),
+    });
+  }
+  return result;
+}
+
+/**
+ * Find a user by LINE userId. Returns null if the sheet can't be read,
+ * or undefined if the user simply isn't recorded yet.
+ */
+export async function findUserRow(
+  lineUserId: string,
+): Promise<UserRow | null | undefined> {
+  const rows = await readUsersSheet();
+  if (rows === null) return null;
+  return rows.find((r) => r.lineUserId === lineUserId);
+}
+
+/**
+ * Insert a new user record OR refresh an existing one's displayName +
+ * lastLogin. Called on every LINE Login callback so the user-history
+ * view stays up to date.
+ */
+export async function upsertUser(args: {
+  lineUserId: string;
+  displayName: string;
+}): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return;
+  const tab = await ensureUsersSheet();
+  if (!tab) return;
+
+  const now = new Date().toISOString();
+  const existing = await findUserRow(args.lineUserId);
+
+  try {
+    if (existing) {
+      // Update displayName (in case it changed) + lastLogin.
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tab}!B${existing.sheetRow}:B${existing.sheetRow}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [[args.displayName]] },
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tab}!E${existing.sheetRow}:E${existing.sheetRow}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [[now]] },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${tab}!A:G`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: [
+            [args.lineUserId, args.displayName, '', now, now, '', ''],
+          ],
+        },
+      });
+    }
+  } catch (error) {
+    console.error('Google Sheets Error (upsertUser):', error);
+  }
+}
+
+export async function updateUserRole(
+  lineUserId: string,
+  role: string,
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return;
+  const tab = await ensureUsersSheet();
+  if (!tab) return;
+  const existing = await findUserRow(lineUserId);
+  if (!existing) return;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!C${existing.sheetRow}:C${existing.sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[role]] },
+    });
+  } catch (error) {
+    console.error('Google Sheets Error (updateUserRole):', error);
+  }
+}
+
+export async function updateUserCustomMenus(
+  lineUserId: string,
+  customMenus: string[],
+): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureUsersSheet();
+  if (!tab) return false;
+  const existing = await findUserRow(lineUserId);
+  if (!existing) return false;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!F${existing.sheetRow}:F${existing.sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[customMenus.length ? JSON.stringify(customMenus) : '']],
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (updateUserCustomMenus):', error);
+    return false;
+  }
 }
 
 /* ─── Items sheet helpers ─── */

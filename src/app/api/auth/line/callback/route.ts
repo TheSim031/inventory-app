@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { encodeLineSession, getLineLoginConfig } from '@/lib/lineAuth';
+import { upsertUser } from '@/lib/googleSheets';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,13 @@ export async function GET(request: NextRequest) {
   if (!profile.userId || !profile.displayName) {
     return NextResponse.json({ error: 'Incomplete profile from LINE' }, { status: 500 });
   }
+
+  // Record the login in the Users sheet — fire and forget. If the sheet
+  // isn't reachable we don't want to fail the login over it.
+  upsertUser({
+    lineUserId: profile.userId,
+    displayName: profile.displayName,
+  }).catch((err) => console.error('upsertUser failed:', err));
 
   // Set session cookie + clear oauth state cookies, then redirect to wherever
   // the user was trying to go.

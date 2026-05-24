@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isUserRole, ROLE_COOKIE, ROLE_HOME } from '@/lib/userRole';
+import { decodeLineSession } from '@/lib/lineAuth';
+import { updateUserRole } from '@/lib/googleSheets';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,15 @@ export async function POST(request: NextRequest) {
   const role = body.role;
   if (!isUserRole(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+  }
+
+  // If the user signed in via LINE, mirror their role choice into the
+  // Users sheet so the admin panel can show / edit it later.
+  const lineUser = decodeLineSession(request.cookies.get('line_user')?.value);
+  if (lineUser?.userId) {
+    updateUserRole(lineUser.userId, role).catch((err) =>
+      console.error('updateUserRole failed:', err),
+    );
   }
 
   const response = NextResponse.json({ success: true, role, home: ROLE_HOME[role] });

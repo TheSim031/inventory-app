@@ -20,6 +20,8 @@ const PROTECTED_PREFIXES = [
   '/purchasing',
   '/executive',
   '/qc',
+  '/inspect',
+  '/admin',
 ];
 
 export function proxy(request: NextRequest) {
@@ -32,7 +34,14 @@ export function proxy(request: NextRequest) {
   if (isProtected) {
     const hasAdmin = request.cookies.get('auth_session')?.value === 'authenticated';
     const hasLineUser = !!request.cookies.get('line_user')?.value;
-    if (!hasAdmin && !hasLineUser) {
+    const hasCreator =
+      request.cookies.get('creator_session')?.value === 'authenticated';
+    if (!hasAdmin && !hasLineUser && !hasCreator) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    // /admin/* requires creator session specifically — non-creators bounce
+    // back to the landing page (not their role home, to avoid confusion).
+    if (pathname.startsWith('/admin') && !hasCreator) {
       return NextResponse.redirect(new URL('/', request.url));
     }
   }
@@ -48,5 +57,7 @@ export const config = {
     '/purchasing/:path*',
     '/executive/:path*',
     '/qc/:path*',
+    '/inspect/:path*',
+    '/admin/:path*',
   ],
 };
