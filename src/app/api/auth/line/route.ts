@@ -22,7 +22,7 @@ export function GET(request: NextRequest) {
 
   const state = crypto.randomUUID();
   // ?next= lets us bounce the user back to where they came from after login.
-  const nextParam = request.nextUrl.searchParams.get('next') || '/request';
+  const nextParam = request.nextUrl.searchParams.get('next') || '/role-select';
 
   const authUrl = new URL('https://access.line.me/oauth2/v2.1/authorize');
   authUrl.searchParams.set('response_type', 'code');

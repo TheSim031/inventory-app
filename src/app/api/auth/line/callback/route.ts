@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid state (possible CSRF)' }, { status: 400 });
   }
 
-  const nextPath = request.cookies.get('line_oauth_next')?.value || '/request';
+  const nextPath = request.cookies.get('line_oauth_next')?.value || '/role-select';
 
   // Exchange authorization code → access token
   const tokenParams = new URLSearchParams({
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
 
   // Set session cookie + clear oauth state cookies, then redirect to wherever
   // the user was trying to go.
-  const target = new URL(nextPath.startsWith('/') ? nextPath : '/request', request.url);
+  const target = new URL(nextPath.startsWith('/') ? nextPath : '/role-select', request.url);
   const response = NextResponse.redirect(target);
   response.cookies.set(
     'line_user',

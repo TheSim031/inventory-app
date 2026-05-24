@@ -11,7 +11,13 @@ export function WarehouseNav() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    // Wipe every kind of session — a warehouse user might have signed in
+    // via either path. Failing silently is fine; we redirect either way.
+    await Promise.all([
+      fetch('/api/auth/logout', { method: 'POST' }),
+      fetch('/api/auth/line/logout', { method: 'POST' }),
+      fetch('/api/auth/role', { method: 'DELETE' }),
+    ]);
     router.push('/');
     router.refresh();
   };
