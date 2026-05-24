@@ -506,3 +506,276 @@ input, textarea, select {
     display: none;
   }
 }
+
+/* ─── ImagePicker ─── */
+.imgpicker {
+  border: 1.5px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  background: #fafafa;
+}
+.imgpicker-compact {
+  padding: 0.6rem;
+  background: var(--surface-color);
+}
+.imgpicker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.imgpicker-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.imgpicker-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.imgpicker-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.imgpicker-btn {
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1.5px solid var(--text-primary);
+  background: var(--surface-color);
+  color: var(--text-primary);
+  transition: all 0.15s;
+}
+.imgpicker-btn:not(:disabled):hover {
+  background: var(--text-primary);
+  color: #fff;
+}
+.imgpicker-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.imgpicker-btn-camera {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+.imgpicker-btn-camera:not(:disabled):hover {
+  background: var(--primary-color);
+  color: #fff;
+}
+.imgpicker-busy {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.imgpicker-error {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger-color);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.imgpicker-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.5rem;
+}
+.imgpicker-thumb {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  border: 1.5px solid var(--border-color);
+  background: #f0f0f0;
+}
+.imgpicker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.imgpicker-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+.imgpicker-del:hover {
+  transform: scale(1.1);
+  background: var(--primary-hover);
+}
+
+/* ─── Confirm Modal ─── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 1rem;
+  animation: modal-fade 0.18s ease;
+}
+.modal-card {
+  background: var(--surface-color);
+  border: 2px solid var(--text-primary);
+  border-top: 6px solid var(--primary-color);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow-lg);
+  animation: modal-pop 0.2s ease;
+}
+.modal-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+.modal-body {
+  color: var(--text-secondary);
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+.modal-btn {
+  padding: 0.7rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1.5px solid transparent;
+  transition: all 0.15s;
+}
+.modal-btn-no {
+  background: var(--surface-color);
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+.modal-btn-no:hover {
+  background: var(--text-primary);
+  color: #fff;
+}
+.modal-btn-yes {
+  background: var(--primary-color);
+  color: #fff;
+  box-shadow: var(--shadow-red);
+}
+.modal-btn-yes:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.modal-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Monthly cleanup banner ─── */
+.cleanup-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: linear-gradient(135deg, #fff7ed, #fff1c4);
+  border: 2px solid var(--warning-color);
+  border-left: 6px solid var(--warning-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.18);
+  animation: cleanup-banner-slide 0.3s ease;
+}
+.cleanup-banner-icon {
+  font-size: 1.8rem;
+}
+.cleanup-banner-body { flex: 1; min-width: 0; }
+.cleanup-banner-title {
+  font-weight: 800;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+}
+.cleanup-banner-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.cleanup-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.cleanup-banner-go {
+  background: var(--warning-color);
+  color: #fff;
+  padding: 0.55rem 0.95rem;
+  border-radius: var(--radius-md);
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.cleanup-banner-go:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+.cleanup-banner-dismiss {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  background: transparent;
+  transition: background 0.15s;
+}
+.cleanup-banner-dismiss:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+}
+@keyframes cleanup-banner-slide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 640px) {
+  .cleanup-banner { flex-wrap: wrap; }
+  .cleanup-banner-actions { width: 100%; justify-content: flex-end; }
+}

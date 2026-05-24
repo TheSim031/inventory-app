@@ -223,6 +223,12 @@ export async function POST(request: NextRequest) {
         department: (department || '').trim(),
         purpose: (purpose || '').trim(),
         itemsCount: items.length,
+        items: items.map((it) => ({
+          name: it.name,
+          quantity: it.quantity,
+          code: it.code,
+        })),
+        recipientLineUserId: lineUserId || undefined,
       }).catch(console.error);
     } else {
       sendLineNotification('IN_RECORDED', {

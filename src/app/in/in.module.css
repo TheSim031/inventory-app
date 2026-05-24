@@ -210,3 +210,117 @@
   cursor: not-allowed;
   box-shadow: none;
 }
+
+.itemsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 1.5rem 0 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.addRowBtn {
+  padding: 0.5rem 0.9rem;
+  border: 1.5px dashed var(--primary-color);
+  border-radius: var(--radius-md);
+  color: var(--primary-color);
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: var(--surface-color);
+  transition: all 0.15s;
+}
+
+.addRowBtn:hover {
+  background: var(--primary-soft);
+  border-style: solid;
+}
+
+.itemsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.itemRow {
+  border: 1.5px solid var(--border-color);
+  border-left: 4px solid var(--primary-color);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem 0.4rem;
+  background: #fafafa;
+}
+
+.itemRowHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.itemRowIndex {
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--primary-color);
+  letter-spacing: 0.05em;
+}
+
+.itemRowRemove {
+  font-size: 0.75rem;
+  color: var(--danger-color);
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-md);
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.itemRowRemove:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.itemRowGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 560px) {
+  .itemRowGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.imagesSection {
+  margin: 1.75rem 0 1rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--border-color);
+}
+
+.sectionSubtitle {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.imageGroup {
+  margin-bottom: 0.85rem;
+}
+
+.warnText {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 4px solid var(--warning-color);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
