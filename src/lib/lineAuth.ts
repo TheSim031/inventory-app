@@ -11,8 +11,16 @@ export type LineLoginConfig = {
 };
 
 export function getLineLoginConfig(): LineLoginConfig | null {
-  const channelId = process.env.LINE_LOGIN_CHANNEL_ID || '';
-  const channelSecret = process.env.LINE_LOGIN_CHANNEL_SECRET || '';
+  // Accept either the "_CHANNEL_" naming (what LINE docs use) or the
+  // "_CLIENT_" naming (what some teams prefer to mirror OAuth jargon).
+  const channelId =
+    process.env.LINE_LOGIN_CHANNEL_ID ||
+    process.env.LINE_CLIENT_ID ||
+    '';
+  const channelSecret =
+    process.env.LINE_LOGIN_CHANNEL_SECRET ||
+    process.env.LINE_CLIENT_SECRET ||
+    '';
   const baseUrl =
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.VERCEL_URL ||
