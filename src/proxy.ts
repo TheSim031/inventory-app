@@ -26,12 +26,8 @@ const RULES: Rule[] = [
     match: (p) => p === '/inspect/history' || p.startsWith('/inspect/history/'),
     allowed: ['WAREHOUSE', 'PURCHASING', 'EXECUTIVE', 'QC'],
   },
-  // Inspection cleanup — warehouse-only janitor screen.
-  {
-    match: (p) => p === '/inspect/cleanup' || p.startsWith('/inspect/cleanup/'),
-    allowed: ['WAREHOUSE'],
-  },
-  // QC inspection screen itself — must come AFTER /inspect/history|cleanup.
+  // QC inspection screen itself — must come AFTER /inspect/history
+  // (so the more-specific path wins the first-match).
   { match: (p) => p === '/inspect' || p.startsWith('/inspect/'), allowed: ['QC'] },
 
   // Warehouse pages

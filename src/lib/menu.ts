@@ -51,10 +51,6 @@ export const MENU_ITEMS: MenuItem[] = [
  *   EXECUTIVE  : "ประวัติตรวจสอบ"
  *   QC         : "ตรวจสอบ" + "ประวัติตรวจสอบ"
  *   ASSEMBLY   : "เบิก"
- *
- * "ลบประวัติตรวจสอบ" (inspect-cleanup) is intentionally not assigned
- * to any role — when present in MENU_ITEMS it remains a top-level menu
- * so only the creator sees it (creator gets every menu ID).
  */
 export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
   WAREHOUSE:  ['warehouse', 'in', 'out', 'request', 'inspect-history'],
