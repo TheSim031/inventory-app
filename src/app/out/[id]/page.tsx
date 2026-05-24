@@ -61,6 +61,10 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   const [pickStates, setPickStates] = useState<Record<number, PickStatus>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Reject modal — requires a reason that's sent to the requester via LINE
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
   const setStatus = (idx: number, status: PickStatus) => {
     setPickStates((prev) => {
       if (prev[idx] === status) {
@@ -125,19 +129,26 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
-  const handleReject = async () => {
-    if (!confirm(`ยืนยันยกเลิกใบเบิก ${id}?`)) return;
+  const openRejectModal = () => {
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
+
+  const submitReject = async () => {
+    const reason = rejectReason.trim();
+    if (!reason) return;
     setSubmitting(true);
     try {
       const res = await fetch(`/api/requisitions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'REJECT' }),
+        body: JSON.stringify({ action: 'REJECT', reason }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        addToast(`ยกเลิกใบเบิก ${id} แล้ว`, 'info');
-        setTimeout(() => router.push('/out'), 600);
+        addToast(`ยกเลิกใบเบิก ${id} แล้ว — แจ้งเหตุผลถึงผู้เบิกทาง LINE แล้ว`, 'info');
+        setShowRejectModal(false);
+        setTimeout(() => router.push('/out'), 800);
       } else {
         addToast(data.error || 'ดำเนินการไม่สำเร็จ', 'error');
         setSubmitting(false);
@@ -305,7 +316,7 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
           type="button"
           className={styles.btnReject}
           disabled={submitting}
-          onClick={handleReject}
+          onClick={openRejectModal}
         >
           ยกเลิกใบเบิก
         </button>
@@ -377,42 +388,104 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
         </div>
       </section>
 
-      {/* ─── Print: Cover Sheet ─── */}
+      {/* ─── Print: Cover Sheet — 8 cells per A4 page, cut-and-paste tags ─── */}
       <section className={`${styles.printSheet} ${styles.coverSheet}`}>
-        <div className={styles.printHeader}>
-          <h2>ใบปะหน้ากล่องพัสดุ</h2>
-          <p>ใบเบิก {requisition.id}</p>
-        </div>
-        <div className={styles.printCoverBig}>{requisition.recorder || '-'}</div>
-        <div className={styles.printMeta}>
-          <div>
-            <strong>แผนก:</strong> {requisition.department || '-'}
+        {chunk(requisition.items, 8).map((page, pageIdx) => (
+          <div key={pageIdx} className={styles.coverPage}>
+            <div className={styles.coverGrid}>
+              {page.map((it, i) => {
+                const globalIdx = pageIdx * 8 + i;
+                return (
+                  <div key={globalIdx} className={styles.coverCell}>
+                    <div className={styles.coverCellHeader}>
+                      <span>{requisition.id}</span>
+                      <span>
+                        #{globalIdx + 1}/{requisition.items.length}
+                      </span>
+                    </div>
+                    <div className={styles.coverCellName}>
+                      {requisition.recorder || '-'}
+                    </div>
+                    <div className={styles.coverCellMeta}>
+                      {requisition.department && <div>{requisition.department}</div>}
+                      {requisition.purpose && (
+                        <div className={styles.coverCellPurpose}>
+                          {requisition.purpose}
+                        </div>
+                      )}
+                    </div>
+                    <div className={styles.coverCellItem}>
+                      <div className={styles.coverCellCode}>{it.code}</div>
+                      <div className={styles.coverCellItemName}>{it.name}</div>
+                      <div className={styles.coverCellQty}>× {it.quantity}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Fill the rest of the last grid with empty cells so the
+                  layout stays a clean 2×4 even when items < 8 */}
+              {page.length < 8 &&
+                Array.from({ length: 8 - page.length }).map((_, i) => (
+                  <div
+                    key={`empty-${pageIdx}-${i}`}
+                    className={`${styles.coverCell} ${styles.coverCellEmpty}`}
+                  />
+                ))}
+            </div>
           </div>
-          <div>
-            <strong>ชื่องาน / วัตถุประสงค์:</strong> {requisition.purpose || '-'}
-          </div>
-        </div>
-        <table className={styles.printTable}>
-          <thead>
-            <tr>
-              <th style={{ width: '40px' }}>#</th>
-              <th>รหัส</th>
-              <th>ชื่อรายการ</th>
-              <th style={{ width: '90px', textAlign: 'right' }}>จำนวน</th>
-            </tr>
-          </thead>
-          <tbody>
-            {requisition.items.map((it, i) => (
-              <tr key={i}>
-                <td>{i + 1}</td>
-                <td>{it.code}</td>
-                <td>{it.name}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        ))}
       </section>
+
+      {/* ─── Reject modal — reason is mandatory and sent to requester ─── */}
+      {showRejectModal && (
+        <div
+          className={`${styles.rejectModalBackdrop} no-print`}
+          onClick={() => !submitting && setShowRejectModal(false)}
+        >
+          <div className={styles.rejectModal} onClick={(e) => e.stopPropagation()}>
+            <h3>❌ ยกเลิกใบเบิก {requisition.id}</h3>
+            <p className={styles.rejectModalSub}>
+              ระบุเหตุผลที่ต้องยกเลิก — เหตุผลจะถูกส่งให้ผู้เบิกทาง LINE
+            </p>
+            <textarea
+              className={styles.rejectModalTextarea}
+              placeholder="เช่น สินค้าหมด · เบิกซ้ำ · ผู้เบิกขอยกเลิกเอง · ฯลฯ"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              autoFocus
+              rows={4}
+            />
+            <div className={styles.rejectModalActions}>
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                disabled={submitting}
+                className={styles.rejectModalCancel}
+              >
+                กลับ
+              </button>
+              <button
+                type="button"
+                onClick={submitReject}
+                disabled={submitting || !rejectReason.trim()}
+                className={styles.rejectModalConfirm}
+              >
+                {submitting
+                  ? '⏳ กำลังยกเลิก...'
+                  : '❌ ยืนยันยกเลิก + แจ้งผู้เบิก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
 }

@@ -18,6 +18,8 @@ type PatchBody = {
   action: Action;
   // Required for CONFIRM_PICK — same order as items returned by GET /api/requisitions
   itemStatuses?: ItemStatus[];
+  // Required for REJECT — sent to the requester via LINE.
+  reason?: string;
 };
 
 /**
@@ -201,7 +203,17 @@ export async function PATCH(
       });
     }
 
-    // REJECT — mark every row REJECTED, no stock change.
+    // REJECT — mark every row REJECTED, no stock change. The reason
+    // is required so the warehouse can never void a requisition silently;
+    // it gets pushed to the requester via LINE.
+    const reason = (body.reason || '').trim();
+    if (!reason) {
+      return NextResponse.json(
+        { error: 'กรุณาระบุเหตุผลที่ยกเลิก' },
+        { status: 400 },
+      );
+    }
+
     await Promise.all(
       matched.map((m) =>
         sheets.spreadsheets.values.update({
@@ -212,6 +224,20 @@ export async function PATCH(
         }),
       ),
     );
+
+    // Notify the requester that their requisition was voided, with the
+    // warehouse-supplied reason. Falls back to broadcast for legacy rows
+    // without a stored lineUserId.
+    const requesterLineUserIdForReject =
+      matched.find((m) => m.lineUserId)?.lineUserId || undefined;
+
+    sendLineNotification('REQUISITION_REJECTED', {
+      recorder,
+      requisitionId: id,
+      reason,
+      items: matched.map((m) => ({ name: m.name, quantity: m.quantity })),
+      recipientLineUserId: requesterLineUserIdForReject,
+    }).catch(console.error);
 
     return NextResponse.json({ success: true, action, itemsCount: matched.length });
   } catch (err) {

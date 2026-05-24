@@ -15,7 +15,8 @@ export type NotificationType =
   | 'OUT_RECORDED'
   | 'IN_RECORDED'
   | 'OUT_OF_STOCK'
-  | 'PICK_COMPLETE';
+  | 'PICK_COMPLETE'
+  | 'REQUISITION_REJECTED';
 
 export type NotificationPayload =
   | {
@@ -48,6 +49,16 @@ export type NotificationPayload =
         outOfStockItems: Array<{ name: string; quantity: number }>;
         // Optional: LINE userId of the requester for push (Phase 4).
         // When omitted, falls back to broadcast.
+        recipientLineUserId?: string;
+      };
+    }
+  | {
+      type: 'REQUISITION_REJECTED';
+      data: {
+        recorder: string;
+        requisitionId: string;
+        reason: string;
+        items: Array<{ name: string; quantity: number }>;
         recipientLineUserId?: string;
       };
     };
@@ -93,6 +104,15 @@ export async function sendLineNotification<T extends NotificationType>(
             .join('\n')}`
         : '';
       message = `📦 พัสดุของคุณจัดเสร็จเรียบร้อยแล้ว มารับได้ที่ห้องคลังสินค้า\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${pickedList || '- ไม่มี -'}${outList}`;
+      break;
+    }
+    case 'REQUISITION_REJECTED': {
+      const d = data as Extract<NotificationPayload, { type: 'REQUISITION_REJECTED' }>['data'];
+      recipientLineUserId = d.recipientLineUserId;
+      const itemsList = d.items
+        .map((it) => `• ${it.name} ×${it.quantity}`)
+        .join('\n');
+      message = `❌ ใบเบิกของคุณถูกยกเลิก\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ขอเบิก:\n${itemsList}`;
       break;
     }
   }

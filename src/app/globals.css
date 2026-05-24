@@ -497,7 +497,7 @@ input, textarea, select {
 
   @page {
     size: A4;
-    margin: 16mm;
+    margin: 10mm;
   }
 }
 
