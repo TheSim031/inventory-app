@@ -285,26 +285,32 @@ export async function sendLineNotification<T extends NotificationType>(
       return;
     }
     case 'PICK_COMPLETE': {
+      // Phase 5 spec: notify both the warehouse group AND the requester.
+      // Warehouse needs an audit-trail message; the requester gets a
+      // personal "your items are ready" push.
       const d = data as Extract<NotificationPayload, { type: 'PICK_COMPLETE' }>['data'];
       const picked = formatItemList(d.pickedItems);
       const outOfStock = d.outOfStockItems.length
         ? `\n\n⚠ พัสดุหมด (ยังไม่ได้จ่าย):\n${formatItemList(d.outOfStockItems)}`
         : '';
-      const text = `📦 พัสดุของคุณจัดเสร็จแล้ว มารับได้ที่ห้องคลังสินค้า\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
+      const warehouseText = `✅ จัดของใบเบิก ${d.requisitionId} เสร็จเรียบร้อย\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
+      const personalText = `📦 พัสดุของคุณจัดเสร็จแล้ว มารับได้ที่ห้องคลังสินค้า\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
+      await sendLineToRoles(['WAREHOUSE'], warehouseText);
       if (d.recipientLineUserId) {
-        await sendLineToUser(d.recipientLineUserId, text);
-      } else {
-        await sendLineToRoles(['WAREHOUSE'], text);
+        await sendLineToUser(d.recipientLineUserId, personalText);
       }
       return;
     }
     case 'REQUISITION_REJECTED': {
+      // Phase 5 spec: notify both the warehouse group AND the requester.
+      // The warehouse keeps the void on record; the requester learns why
+      // their requisition was cancelled.
       const d = data as Extract<NotificationPayload, { type: 'REQUISITION_REJECTED' }>['data'];
-      const text = `❌ ใบเบิกของคุณถูกยกเลิก\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
+      const warehouseText = `❌ ยกเลิกใบเบิก ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ยกเลิก:\n${formatItemList(d.items)}`;
+      const personalText = `❌ ใบเบิกของคุณถูกยกเลิก\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
+      await sendLineToRoles(['WAREHOUSE'], warehouseText);
       if (d.recipientLineUserId) {
-        await sendLineToUser(d.recipientLineUserId, text);
-      } else {
-        await sendLineToRoles(['WAREHOUSE'], text);
+        await sendLineToUser(d.recipientLineUserId, personalText);
       }
       return;
     }
