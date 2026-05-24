@@ -1,8 +1,9 @@
-import { getSheets, getSheetNames } from '@/lib/googleSheets';
+import { getSheets, getSheetNames, readItemsSheet } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
 type HistoryType = 'IN' | 'OUT';
+type HistoryStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
 
 type HistoryItemInput = {
   code: string;
@@ -29,7 +30,19 @@ export type HistoryEntry = {
   department: string;
   purpose: string;
   poRef: string;
+  requisitionId: string;
+  status: HistoryStatus;
 };
+
+const HISTORY_RANGE = 'A:K'; // A: date, B: type, C: code, D: name, E: qty, F: recorder, G: dept, H: purpose, I: poRef, J: requisitionId, K: status
+
+function normalizeStatus(raw: string, type: HistoryType): HistoryStatus {
+  const v = raw.trim().toUpperCase();
+  if (v === 'PENDING' || v === 'COMPLETED' || v === 'REJECTED') return v;
+  // Legacy/empty rows: IN entries are always completed, OUT entries default to COMPLETED
+  // (existing OUT rows pre-approval-flow already deducted stock under the previous logic).
+  return type === 'IN' ? 'COMPLETED' : 'COMPLETED';
+}
 
 export async function GET() {
   const { sheets, spreadsheetId } = getSheets();
@@ -42,25 +55,29 @@ export async function GET() {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${SHEET_HISTORY}!A:I`,
+      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
     });
 
     const rows = response.data.values || [];
     if (rows.length <= 1) return NextResponse.json([]);
 
-    const entries: HistoryEntry[] = rows.slice(1).map((row) => ({
-      date: row[0] || '',
-      type: (row[1] === 'IN' ? 'IN' : 'OUT') as HistoryType,
-      itemCode: row[2] || '',
-      itemName: row[3] || '',
-      quantity: parseInt(row[4] || '0', 10),
-      recorder: row[5] || '',
-      department: row[6] || '',
-      purpose: row[7] || '',
-      poRef: row[8] || '',
-    }));
+    const entries: HistoryEntry[] = rows.slice(1).map((row) => {
+      const type: HistoryType = row[1] === 'IN' ? 'IN' : 'OUT';
+      return {
+        date: String(row[0] ?? ''),
+        type,
+        itemCode: String(row[2] ?? ''),
+        itemName: String(row[3] ?? ''),
+        quantity: parseInt(String(row[4] ?? '0'), 10) || 0,
+        recorder: String(row[5] ?? ''),
+        department: String(row[6] ?? ''),
+        purpose: String(row[7] ?? ''),
+        poRef: String(row[8] ?? ''),
+        requisitionId: String(row[9] ?? ''),
+        status: normalizeStatus(String(row[10] ?? ''), type),
+      };
+    });
 
-    // newest first
     return NextResponse.json(entries.reverse());
   } catch (error) {
     console.error('Error fetching history from Google Sheets:', error);
@@ -85,7 +102,6 @@ export async function POST(request: NextRequest) {
 
   const { type, recorder, department, purpose, poRef, items } = body;
 
-  // Validation
   if (type !== 'IN' && type !== 'OUT') {
     return NextResponse.json({ error: 'type ต้องเป็น IN หรือ OUT' }, { status: 400 });
   }
@@ -98,7 +114,7 @@ export async function POST(request: NextRequest) {
   if (type === 'OUT' && (!department?.trim() || !purpose?.trim())) {
     return NextResponse.json(
       { error: 'การเบิก (OUT) ต้องระบุแผนกและวัตถุประสงค์' },
-      { status: 400 }
+      { status: 400 },
     );
   }
   if (type === 'IN' && !poRef?.trim()) {
@@ -109,64 +125,58 @@ export async function POST(request: NextRequest) {
     if (!it.code || !it.name || !Number.isFinite(it.quantity) || it.quantity <= 0) {
       return NextResponse.json(
         { error: `รายการไม่ถูกต้อง: ${JSON.stringify(it)}` },
-        { status: 400 }
+        { status: 400 },
       );
     }
   }
 
   try {
-    // 1) อ่าน stock sheet เพื่อหา row index + ตรวจ stock
-    const itemsRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${SHEET_ITEMS}!A:E`,
-    });
-    const itemsRows = itemsRes.data.values || [];
-
-    // index by code → { rowNumber (1-based for sheet), currentStock }
-    const stockIndex = new Map<string, { rowNumber: number; currentStock: number }>();
-    for (let i = 1; i < itemsRows.length; i++) {
-      const code = itemsRows[i][0];
-      if (code) {
-        const stock = parseInt(itemsRows[i][3] || '0', 10);
-        stockIndex.set(code, { rowNumber: i + 1, currentStock: stock });
-      }
-    }
-
-    // 2) Validate ทั้ง batch ก่อน mutate (ลด partial-write risk)
-    const stockChanges = new Map<string, number>(); // code → new stock
-    for (const it of items) {
-      const entry = stockIndex.get(it.code);
-      if (!entry) {
-        const message = `ไม่พบรหัสสินค้า "${it.code}" (${it.name}) ในสต็อก`;
-        sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
-      // ใช้ค่าจาก stockChanges ถ้ารายการเดียวกันถูกอ้างซ้ำใน batch
-      const baseStock = stockChanges.get(it.code) ?? entry.currentStock;
-      const newStock = type === 'OUT' ? baseStock - it.quantity : baseStock + it.quantity;
-      if (type === 'OUT' && newStock < 0) {
-        const message = `สินค้า "${it.name}" (${it.code}) มีไม่พอ (คงเหลือ ${baseStock} ต้องการ ${it.quantity})`;
-        sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
-      stockChanges.set(it.code, newStock);
-    }
-
-    // 3) Update stock cells (col D)
-    await Promise.all(
-      Array.from(stockChanges.entries()).map(([code, newStock]) => {
-        const rowNumber = stockIndex.get(code)!.rowNumber;
-        return sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: `${SHEET_ITEMS}!D${rowNumber}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[newStock]] },
-        });
-      })
-    );
-
-    // 4) Append history rows
     const now = new Date().toISOString();
+    const requisitionId =
+      type === 'OUT' ? `REQ-${Date.now()}` : `IN-${Date.now()}`;
+    const status: HistoryStatus = type === 'IN' ? 'COMPLETED' : 'PENDING';
+
+    // For IN (Receive Goods), validate items exist and add stock immediately.
+    // For OUT (Requisition request), DO NOT touch stock — wait for warehouse approval.
+    if (type === 'IN') {
+      const schema = await readItemsSheet();
+      if (!schema) {
+        return NextResponse.json(
+          { error: 'อ่านตารางสต็อกไม่ได้' },
+          { status: 500 },
+        );
+      }
+      const stockIndex = new Map<string, { rowNumber: number; currentStock: number }>();
+      for (const r of schema.rows) {
+        stockIndex.set(r.code, { rowNumber: r.rowNumber, currentStock: r.stock });
+      }
+
+      const stockChanges = new Map<string, number>();
+      for (const it of items) {
+        const entry = stockIndex.get(it.code);
+        if (!entry) {
+          const message = `ไม่พบรหัสสินค้า "${it.code}" (${it.name}) ในสต็อก`;
+          sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
+          return NextResponse.json({ error: message }, { status: 400 });
+        }
+        const baseStock = stockChanges.get(it.code) ?? entry.currentStock;
+        stockChanges.set(it.code, baseStock + it.quantity);
+      }
+
+      await Promise.all(
+        Array.from(stockChanges.entries()).map(([code, newStock]) => {
+          const rowNumber = stockIndex.get(code)!.rowNumber;
+          return sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${SHEET_ITEMS}!${schema.stockColLetter}${rowNumber}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[newStock]] },
+          });
+        }),
+      );
+    }
+
+    // Append history rows (one per item, sharing the same requisitionId)
     const historyValues = items.map((it) => [
       now,
       type,
@@ -177,17 +187,18 @@ export async function POST(request: NextRequest) {
       type === 'OUT' ? (department || '').trim() : '',
       type === 'OUT' ? (purpose || '').trim() : '',
       type === 'IN' ? (poRef || '').trim() : '',
+      requisitionId,
+      status,
     ]);
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${SHEET_HISTORY}!A:I`,
+      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: historyValues },
     });
 
-    // 5) LINE notification (fire & forget)
     if (type === 'OUT') {
       sendLineNotification('OUT_RECORDED', {
         recorder: recorder.trim(),
@@ -203,13 +214,13 @@ export async function POST(request: NextRequest) {
       }).catch(console.error);
     }
 
-    return NextResponse.json({ success: true, count: items.length }, { status: 201 });
+    return NextResponse.json(
+      { success: true, count: items.length, requisitionId, status },
+      { status: 201 },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Error recording history:', message);
-    return NextResponse.json(
-      { error: `เกิดข้อผิดพลาด: ${message}` },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${message}` }, { status: 500 });
   }
 }

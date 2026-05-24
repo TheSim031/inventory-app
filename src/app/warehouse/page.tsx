@@ -15,6 +15,18 @@ type Item = {
   stock: number;
 };
 
+type RequisitionItem = { code: string; name: string; quantity: number };
+type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
+type Requisition = {
+  id: string;
+  date: string;
+  recorder: string;
+  department: string;
+  purpose: string;
+  status: RequisitionStatus;
+  items: RequisitionItem[];
+};
+
 /* ─── Toast System ─── */
 type ToastType = 'success' | 'error' | 'info';
 interface Toast {
@@ -82,9 +94,17 @@ function useToast() {
 
 /* ─── Main Page ─── */
 export default function WarehousePage() {
-  const { data: items, error, mutate: mutateItems } = useSWR<Item[]>('/api/items', fetcher, {
-    refreshInterval: 10000,
-  });
+  const {
+    data: items,
+    error: itemsError,
+    mutate: mutateItems,
+  } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 10000 });
+
+  const {
+    data: requisitions,
+    mutate: mutateReqs,
+  } = useSWR<Requisition[]>('/api/requisitions', fetcher, { refreshInterval: 8000 });
+
   const router = useRouter();
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
@@ -111,7 +131,7 @@ export default function WarehousePage() {
               ← กลับหน้าหลัก
             </Link>
             <h1>ระบบจัดการคลังสินค้า (Warehouse Dashboard)</h1>
-            <p>บันทึกการรับสินค้าเข้าคลัง</p>
+            <p>ตรวจสอบและอนุมัติใบเบิก พร้อมบันทึกการรับเข้าคลัง</p>
           </div>
           <button className={styles.btnLogout} onClick={handleLogout}>
             ออกจากระบบ
@@ -119,13 +139,133 @@ export default function WarehousePage() {
         </div>
       </header>
 
+      <PendingRequisitions
+        requisitions={requisitions ?? []}
+        loading={!requisitions}
+        onChange={() => {
+          mutateReqs();
+          mutateItems();
+        }}
+        addToast={addToast}
+      />
+
       <ReceiveGoodsForm
         items={items ?? []}
-        itemsError={!!error}
+        itemsError={!!itemsError}
         onRecorded={() => mutateItems()}
         addToast={addToast}
       />
     </div>
+  );
+}
+
+/* ─── Pending Requisitions ─── */
+function PendingRequisitions({
+  requisitions,
+  loading,
+  onChange,
+  addToast,
+}: {
+  requisitions: Requisition[];
+  loading: boolean;
+  onChange: () => void;
+  addToast: (msg: string, type: ToastType) => void;
+}) {
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  const pending = useMemo(
+    () => requisitions.filter((r) => r.status === 'PENDING'),
+    [requisitions],
+  );
+
+  const act = async (req: Requisition, action: 'APPROVE' | 'REJECT') => {
+    const confirmMsg =
+      action === 'APPROVE'
+        ? `ยืนยันอนุมัติและตัดสต็อกใบเบิก ${req.id}?`
+        : `ยืนยันยกเลิกใบเบิก ${req.id}?`;
+    if (!confirm(confirmMsg)) return;
+
+    setProcessing(req.id);
+    try {
+      const res = await fetch(`/api/requisitions/${encodeURIComponent(req.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        addToast(
+          action === 'APPROVE'
+            ? `อนุมัติใบเบิก ${req.id} แล้ว — ตัดสต็อกเรียบร้อย`
+            : `ยกเลิกใบเบิก ${req.id} แล้ว`,
+          action === 'APPROVE' ? 'success' : 'info',
+        );
+        onChange();
+      } else {
+        addToast(data.error || 'ดำเนินการไม่สำเร็จ', 'error');
+      }
+    } catch {
+      addToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+    }
+    setProcessing(null);
+  };
+
+  return (
+    <section className={styles.pendingCard}>
+      <h2 className={styles.sectionTitle}>📋 ใบเบิกรออนุมัติ ({pending.length})</h2>
+
+      {loading ? (
+        <p className={styles.emptyState}>กำลังโหลด...</p>
+      ) : pending.length === 0 ? (
+        <p className={styles.emptyState}>ไม่มีใบเบิกรออนุมัติในขณะนี้</p>
+      ) : (
+        <div className={styles.reqList}>
+          {pending.map((req) => (
+            <div key={req.id} className={styles.reqRow}>
+              <div className={styles.reqInfo}>
+                <div className={styles.reqHeader}>
+                  <span className={styles.reqId}>{req.id}</span>
+                  <span className={styles.reqDate}>
+                    {req.date ? new Date(req.date).toLocaleString('th-TH') : ''}
+                  </span>
+                </div>
+                <div className={styles.reqMeta}>
+                  <strong>{req.recorder}</strong>
+                  {req.department && <span> · {req.department}</span>}
+                </div>
+                {req.purpose && <div className={styles.reqPurpose}>วัตถุประสงค์: {req.purpose}</div>}
+                <ul className={styles.reqItems}>
+                  {req.items.map((it, i) => (
+                    <li key={i}>
+                      <code>{it.code}</code> {it.name}{' '}
+                      <span className={styles.qty}>×{it.quantity}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className={styles.reqActions}>
+                <button
+                  type="button"
+                  className={styles.btnApprove}
+                  disabled={processing === req.id}
+                  onClick={() => act(req, 'APPROVE')}
+                >
+                  {processing === req.id ? '...' : 'อนุมัติ & ตัดสต็อก'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.btnReject}
+                  disabled={processing === req.id}
+                  onClick={() => act(req, 'REJECT')}
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -205,23 +345,14 @@ function ReceiveGoodsForm({
           type: 'IN',
           recorder: recorder.trim(),
           poRef: poRef.trim(),
-          items: [
-            {
-              code: selected.code,
-              name: selected.name,
-              quantity,
-            },
-          ],
+          items: [{ code: selected.code, name: selected.name, quantity }],
         }),
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        addToast(
-          `บันทึกรับเข้า "${selected.name}" จำนวน ${quantity} เรียบร้อย`,
-          'success',
-        );
+        addToast(`บันทึกรับเข้า "${selected.name}" จำนวน ${quantity} เรียบร้อย`, 'success');
         setRecorder('');
         setPoRef('');
         setQuantity('');
@@ -238,7 +369,7 @@ function ReceiveGoodsForm({
 
   return (
     <form onSubmit={handleSubmit} className={styles.receiveCard}>
-      <h2 className={styles.receiveTitle}>📥 รับของเข้าคลัง</h2>
+      <h2 className={styles.sectionTitle}>📥 รับของเข้าคลัง</h2>
 
       <div className={styles.inputGroup}>
         <label>ชื่อผู้รับ *</label>

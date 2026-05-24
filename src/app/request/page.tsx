@@ -168,7 +168,7 @@ export default function RequestPage() {
         <div className={styles.successCard}>
           <div className={styles.iconWrapper}>✅</div>
           <h2>ส่งคำขอเบิกเรียบร้อย!</h2>
-          <p>ระบบได้ส่งแจ้งเตือนไปยังคลังสินค้าแล้ว โปรดรอการจัดเตรียมพัสดุ</p>
+          <p>รอเจ้าหน้าที่คลังสินค้าตรวจสอบและอนุมัติ ก่อนรับพัสดุได้</p>
           <button className={styles.btnPrimary} onClick={() => setSuccess(false)}>
             เบิกพัสดุเพิ่มเติม
           </button>
