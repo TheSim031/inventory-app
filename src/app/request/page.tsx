@@ -31,8 +31,19 @@ type Item = {
 
 type CartEntry = { code: string; name: string; quantity: number; maxStock: number };
 
+type MeResponse = {
+  user: { userId: string; displayName: string; pictureUrl?: string } | null;
+  lineLoginEnabled: boolean;
+  oaBasicId: string;
+};
+
+const FRIEND_ACK_KEY = 'pioneer-oa-friend-added';
+
 export default function RequestPage() {
-  const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 5000 });
+  const { data: meData, mutate: mutateMe } = useSWR<MeResponse>('/api/auth/me', fetcher);
+  const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, {
+    refreshInterval: 5000,
+  });
 
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [form, setForm] = useState({
@@ -45,9 +56,26 @@ export default function RequestPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [friendAcked, setFriendAcked] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
-  // Close suggestions when clicking outside
+  // Read the "already added OA as friend" flag from localStorage once on mount.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setFriendAcked(window.localStorage.getItem(FRIEND_ACK_KEY) === '1');
+    }
+  }, []);
+
+  // Once we know the LINE displayName, prefill the requester name (only if
+  // the user hasn't typed anything yet — don't clobber their edits).
+  useEffect(() => {
+    const name = meData?.user?.displayName;
+    if (name && !form.requester_name) {
+      setForm((prev) => ({ ...prev, requester_name: name }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meData?.user?.displayName]);
+
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
@@ -149,7 +177,12 @@ export default function RequestPage() {
       if (res.ok) {
         setSuccess(true);
         setCart({});
-        setForm({ department: '', customDepartment: '', requester_name: '', purpose: '' });
+        setForm({
+          department: '',
+          customDepartment: '',
+          requester_name: meData?.user?.displayName || '',
+          purpose: '',
+        });
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || 'เกิดข้อผิดพลาดในการส่งคำขอเบิก');
@@ -161,6 +194,80 @@ export default function RequestPage() {
     setSubmitting(false);
   };
 
+  const handleLineLogout = async () => {
+    if (!confirm('ออกจากระบบ LINE?')) return;
+    await fetch('/api/auth/line/logout', { method: 'POST' });
+    mutateMe();
+  };
+
+  const ackFriendAdded = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(FRIEND_ACK_KEY, '1');
+    }
+    setFriendAcked(true);
+  };
+
+  // ─── Gate: LINE Login required (if env is configured) ───
+  if (meData && meData.lineLoginEnabled && !meData.user) {
+    return (
+      <div className={styles.container}>
+        <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
+        <div className={styles.gateCard}>
+          <div className={styles.gateIcon}>💬</div>
+          <h2>เข้าสู่ระบบด้วย LINE</h2>
+          <p>
+            เพื่อให้เราแจ้งเตือนเมื่อพัสดุของคุณจัดเสร็จ — กรุณาเข้าสู่ระบบด้วย LINE ก่อน
+          </p>
+          <a
+            href={`/api/auth/line?next=${encodeURIComponent('/request')}`}
+            className={styles.btnLineLogin}
+          >
+            <span className={styles.lineIcon}>🟢</span> เข้าสู่ระบบด้วย LINE
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── First-time: prompt to add OA as friend ───
+  if (
+    meData?.lineLoginEnabled &&
+    meData.user &&
+    meData.oaBasicId &&
+    !friendAcked
+  ) {
+    // Build add-friend URL from Basic ID. Strip the leading @ for the URL form.
+    const idPart = meData.oaBasicId.replace(/^@/, '');
+    const addFriendUrl = `https://line.me/R/ti/p/@${idPart}`;
+    return (
+      <div className={styles.container}>
+        <div className={styles.gateCard}>
+          <div className={styles.gateIcon}>🤝</div>
+          <h2>เพิ่มเพื่อน LINE Official Account</h2>
+          <p>
+            สวัสดีคุณ <strong>{meData.user.displayName}</strong> — กรุณาเพิ่ม OA ของบริษัทเป็นเพื่อน
+            เพื่อให้เราส่งแจ้งเตือนเมื่อพัสดุของคุณจัดเสร็จ
+          </p>
+          <a
+            href={addFriendUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.btnLineLogin}
+          >
+            ➕ เพิ่มเพื่อน OA
+          </a>
+          <button
+            type="button"
+            onClick={ackFriendAdded}
+            className={styles.btnGhost}
+          >
+            เพิ่มแล้ว — ดำเนินการต่อ
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (error) return <div className={styles.container}>Failed to load items</div>;
   if (!items) return <div className={styles.container}>Loading...</div>;
 
@@ -171,7 +278,7 @@ export default function RequestPage() {
         <div className={styles.successCard}>
           <div className={styles.iconWrapper}>✅</div>
           <h2>ส่งคำขอเบิกเรียบร้อย!</h2>
-          <p>รอเจ้าหน้าที่คลังสินค้าตรวจสอบและอนุมัติ ก่อนรับพัสดุได้</p>
+          <p>เราจะส่งแจ้งเตือนทาง LINE เมื่อเจ้าหน้าที่คลังจัดของเสร็จ</p>
           <button className={styles.btnPrimary} onClick={() => setSuccess(false)}>
             เบิกพัสดุเพิ่มเติม
           </button>
@@ -182,7 +289,19 @@ export default function RequestPage() {
 
   return (
     <div className={styles.container}>
-      <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
+      <div className={styles.topBar}>
+        <Link href="/" className={styles.backLink}>← กลับหน้าหลัก</Link>
+        {meData?.user && (
+          <button
+            type="button"
+            onClick={handleLineLogout}
+            className={styles.lineUserPill}
+            title="คลิกเพื่อออกจากระบบ LINE"
+          >
+            🟢 {meData.user.displayName}
+          </button>
+        )}
+      </div>
       <header className={styles.header}>
         <h1>เบิกจ่ายพัสดุออนไลน์</h1>
         <p>สะดวกรวดเร็ว อัปเดตแบบเรียลไทม์</p>

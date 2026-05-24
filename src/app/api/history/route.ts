@@ -27,6 +27,9 @@ type HistoryPostBody = {
   department?: string;
   purpose?: string;
   poRef?: string;
+  // Filled automatically from LINE session cookie when present — do not
+  // trust client-supplied values here, the server overrides from cookie.
+  lineUserId?: string;
   items: HistoryItemInput[];
 };
 
@@ -174,10 +177,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Read lineUserId from the LINE session cookie (server-trusted) so the
+    // requester can be push-notified later when their pick is done.
+    const lineUserId = (() => {
+      const raw = request.cookies.get('line_user')?.value;
+      if (!raw) return '';
+      try {
+        const parsed = JSON.parse(raw) as { userId?: string };
+        return (parsed.userId || '').trim();
+      } catch {
+        return '';
+      }
+    })();
+
     // Append history rows. Columns:
     //   A วันที่ | B ประเภท | C รหัสรายการ | D ชื่อรายการ | E จำนวน |
     //   F ชื่อผู้บันทึก | G แผนก | H วัตถุประสงค์ | I รหัส PO/PX |
-    //   J requisitionId | K status   (J, K are system columns)
+    //   J requisitionId | K status | L lineUserId   (J/K/L are system cols)
     const historyValues = items.map((it) => [
       now,
       type,
@@ -190,6 +206,7 @@ export async function POST(request: NextRequest) {
       type === 'IN' ? (poRef || '').trim() : '',
       requisitionId,
       status,
+      lineUserId,
     ]);
 
     await sheets.spreadsheets.values.append({

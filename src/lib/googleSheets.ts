@@ -259,14 +259,19 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
  *   Row 1   — title row, skipped
  *   Row 2   — headers: วันที่ | ประเภท | รหัสรายการ | ชื่อรายการ | จำนวน |
  *             ชื่อผู้บันทึก | แผนก (OUT) | วัตถุประสงค์ (OUT) | รหัส PO/PX (IN)
- *             plus internal cols J=requisitionId, K=status (used by the
- *             approval flow — feel free to label them in the sheet)
+ *             plus internal cols J=requisitionId, K=status, L=lineUserId
+ *             (J/K/L are used by the approval flow — feel free to label
+ *             them in the sheet)
  *   Row 3+  — entries
+ *
+ * Note: column L (lineUserId) was added when LINE Login was wired up.
+ * Legacy rows have it blank, which is fine — push falls back to broadcast.
  */
 const HISTORY_HEADER_ROW_INDEX = 1; // sheet row 2
 const HISTORY_DATA_START_INDEX = 2; // sheet row 3
-export const HISTORY_RANGE = 'A:K';
+export const HISTORY_RANGE = 'A:L';
 export const HISTORY_STATUS_COL = 'K';
+export const HISTORY_LINE_USER_COL = 'L';
 
 export type HistoryRow = {
   sheetRow: number; // 1-based
@@ -281,6 +286,7 @@ export type HistoryRow = {
   poRef: string;
   requisitionId: string;
   status: string; // raw value — callers may normalize
+  lineUserId: string; // optional — empty for legacy rows
 };
 
 export async function readHistorySheet(): Promise<HistoryRow[] | null> {
@@ -324,6 +330,7 @@ export async function readHistorySheet(): Promise<HistoryRow[] | null> {
       poRef: String(row[8] ?? ''),
       requisitionId: String(row[9] ?? ''),
       status: String(row[10] ?? ''),
+      lineUserId: String(row[11] ?? '').trim(),
     });
   }
   return result;

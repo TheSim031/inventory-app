@@ -362,3 +362,110 @@
   background: var(--danger-color);
   color: white;
 }
+
+/* ─── LINE login gate ─── */
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.lineUserPill {
+  background: #06c755;
+  color: #fff;
+  padding: 0.4rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: filter 0.15s;
+}
+
+.lineUserPill:hover {
+  filter: brightness(1.08);
+}
+
+.gateCard {
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  border: 2px solid var(--text-primary);
+  border-top: 6px solid var(--primary-color);
+  box-shadow: var(--shadow-lg);
+  max-width: 480px;
+  margin: 3rem auto;
+}
+
+.gateIcon {
+  font-size: 3.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.gateCard h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.gateCard p {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.gateCard p strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.btnLineLogin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #06c755;
+  color: #fff;
+  padding: 0.85rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  transition: filter 0.15s, transform 0.15s;
+  box-shadow: 0 6px 18px -4px rgba(6, 199, 85, 0.45);
+}
+
+.btnLineLogin:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.lineIcon {
+  font-size: 1.1rem;
+}
+
+.btnGhost {
+  display: inline-block;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.7rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: 1.5px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btnGhost:hover {
+  background: var(--bg-color);
+}

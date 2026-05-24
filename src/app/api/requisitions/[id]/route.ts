@@ -176,13 +176,18 @@ export async function PATCH(
         ),
       );
 
-      // Notify the requester. Currently broadcasts to OA followers; Phase 4
-      // will route to recipientLineUserId once LINE Login is in place.
+      // Notify the requester directly via LINE if we captured their userId
+      // when they submitted the requisition; otherwise broadcast to OA
+      // followers as a fallback.
+      const requesterLineUserId =
+        matched.find((m) => m.lineUserId)?.lineUserId || undefined;
+
       sendLineNotification('PICK_COMPLETE', {
         recorder,
         requisitionId: id,
         pickedItems,
         outOfStockItems,
+        recipientLineUserId: requesterLineUserId,
       }).catch(console.error);
 
       return NextResponse.json({
