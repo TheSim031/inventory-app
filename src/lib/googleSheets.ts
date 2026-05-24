@@ -33,7 +33,7 @@ export function getSheets() {
 export function getSheetNames() {
   return {
     SHEET_ITEMS: process.env.GOOGLE_SHEET_ITEMS || 'สต็อกสินค้า',
-    SHEET_HISTORY: process.env.GOOGLE_SHEET_HISTORY || 'บันทึกเข้า-ออก',
+    SHEET_HISTORY: process.env.GOOGLE_SHEET_HISTORY || 'ประวัติเข้า-ออก',
   };
 }
 
@@ -129,22 +129,41 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const sIdx = stockIdx >= 0 ? stockIdx : 3;
   const stIdx = statusIdx >= 0 ? statusIdx : 4;
 
+  // Parse stock: strip thousands separators, treat plain "-" / blank as 0,
+  // clamp negatives to 0 (the sheet uses "-" to mean "no stock recorded").
   const parseStock = (v: unknown): number => {
-    const s = String(v ?? '').replace(/[^\d.\-]/g, '');
-    const n = parseInt(s, 10);
-    return Number.isFinite(n) ? n : 0;
+    const raw = String(v ?? '').trim();
+    if (raw === '' || raw === '-') return 0;
+    const cleaned = raw.replace(/,/g, '');
+    const n = parseInt(cleaned, 10);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n;
+  };
+
+  // A row is a "category separator" (e.g. "▌ BUSH" in col A, other cells blank)
+  // when its display fields are empty or start with the ▌ marker. Skip those
+  // so they never appear as searchable items.
+  const isSeparatorRow = (code: string, name: string, category: string): boolean => {
+    if (code.startsWith('▌')) return true;
+    if (!name && !category) return true; // pure section header
+    if (name.startsWith('▌')) return true;
+    if (category.startsWith('▌')) return true;
+    return false;
   };
 
   const items: SheetItemRow[] = [];
   for (let i = DATA_START_INDEX; i < rawRows.length; i++) {
     const row = rawRows[i] || [];
     const code = String(row[cIdx] ?? '').trim();
-    if (!code) continue; // skip rows without a code
+    const name = String(row[nIdx] ?? '').trim();
+    const category = String(row[ctIdx] ?? '').trim();
+    if (!code) continue;
+    if (isSeparatorRow(code, name, category)) continue;
     items.push({
       rowNumber: i + 1, // 1-based sheet row
       code,
-      name: String(row[nIdx] ?? '').trim(),
-      category: String(row[ctIdx] ?? '').trim(),
+      name,
+      category,
       stock: parseStock(row[sIdx]),
       status: String(row[stIdx] ?? '').trim(),
     });
@@ -154,4 +173,71 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
     rows: items,
     stockColLetter: colIndexToLetter(sIdx),
   };
+}
+
+/* ─── History sheet helpers ─── */
+
+/**
+ * History sheet ("ประวัติเข้า-ออก") layout:
+ *   Row 1   — title row, skipped
+ *   Row 2   — headers: วันที่ | ประเภท | รหัสรายการ | ชื่อรายการ | จำนวน |
+ *             ชื่อผู้บันทึก | แผนก (OUT) | วัตถุประสงค์ (OUT) | รหัส PO/PX (IN)
+ *             plus internal cols J=requisitionId, K=status (used by the
+ *             approval flow — feel free to label them in the sheet)
+ *   Row 3+  — entries
+ */
+const HISTORY_HEADER_ROW_INDEX = 1; // sheet row 2
+const HISTORY_DATA_START_INDEX = 2; // sheet row 3
+export const HISTORY_RANGE = 'A:K';
+export const HISTORY_STATUS_COL = 'K';
+
+export type HistoryRow = {
+  sheetRow: number; // 1-based
+  date: string;
+  type: 'IN' | 'OUT';
+  code: string;
+  name: string;
+  quantity: number;
+  recorder: string;
+  department: string;
+  purpose: string;
+  poRef: string;
+  requisitionId: string;
+  status: string; // raw value — callers may normalize
+};
+
+export async function readHistorySheet(): Promise<HistoryRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const { SHEET_HISTORY } = getSheetNames();
+  if (!sheets || !spreadsheetId) return null;
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
+  });
+
+  const rawRows = response.data.values || [];
+  if (rawRows.length <= HISTORY_HEADER_ROW_INDEX) return [];
+
+  const result: HistoryRow[] = [];
+  for (let i = HISTORY_DATA_START_INDEX; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const date = String(row[0] ?? '').trim();
+    if (!date) continue; // skip blank rows
+    result.push({
+      sheetRow: i + 1,
+      date,
+      type: row[1] === 'IN' ? 'IN' : 'OUT',
+      code: String(row[2] ?? ''),
+      name: String(row[3] ?? ''),
+      quantity: parseInt(String(row[4] ?? '0'), 10) || 0,
+      recorder: String(row[5] ?? ''),
+      department: String(row[6] ?? ''),
+      purpose: String(row[7] ?? ''),
+      poRef: String(row[8] ?? ''),
+      requisitionId: String(row[9] ?? ''),
+      status: String(row[10] ?? ''),
+    });
+  }
+  return result;
 }

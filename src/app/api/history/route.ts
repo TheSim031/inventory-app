@@ -1,4 +1,10 @@
-import { getSheets, getSheetNames, readItemsSheet } from '@/lib/googleSheets';
+import {
+  getSheets,
+  getSheetNames,
+  readItemsSheet,
+  readHistorySheet,
+  HISTORY_RANGE,
+} from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
@@ -34,51 +40,34 @@ export type HistoryEntry = {
   status: HistoryStatus;
 };
 
-const HISTORY_RANGE = 'A:K'; // A: date, B: type, C: code, D: name, E: qty, F: recorder, G: dept, H: purpose, I: poRef, J: requisitionId, K: status
-
-function normalizeStatus(raw: string, type: HistoryType): HistoryStatus {
+function normalizeStatus(raw: string): HistoryStatus {
   const v = raw.trim().toUpperCase();
   if (v === 'PENDING' || v === 'COMPLETED' || v === 'REJECTED') return v;
-  // Legacy/empty rows: IN entries are always completed, OUT entries default to COMPLETED
-  // (existing OUT rows pre-approval-flow already deducted stock under the previous logic).
-  return type === 'IN' ? 'COMPLETED' : 'COMPLETED';
+  // Legacy/blank rows: assume they were already completed under the previous
+  // auto-deduct logic so they don't reappear in the pending queue.
+  return 'COMPLETED';
 }
 
 export async function GET() {
-  const { sheets, spreadsheetId } = getSheets();
-  const { SHEET_HISTORY } = getSheetNames();
-
-  if (!sheets || !spreadsheetId) {
-    return NextResponse.json([]);
-  }
-
   try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
-    });
+    const rows = await readHistorySheet();
+    if (!rows) return NextResponse.json([]);
 
-    const rows = response.data.values || [];
-    if (rows.length <= 1) return NextResponse.json([]);
+    const entries: HistoryEntry[] = rows.map((r) => ({
+      date: r.date,
+      type: r.type,
+      itemCode: r.code,
+      itemName: r.name,
+      quantity: r.quantity,
+      recorder: r.recorder,
+      department: r.department,
+      purpose: r.purpose,
+      poRef: r.poRef,
+      requisitionId: r.requisitionId,
+      status: normalizeStatus(r.status),
+    }));
 
-    const entries: HistoryEntry[] = rows.slice(1).map((row) => {
-      const type: HistoryType = row[1] === 'IN' ? 'IN' : 'OUT';
-      return {
-        date: String(row[0] ?? ''),
-        type,
-        itemCode: String(row[2] ?? ''),
-        itemName: String(row[3] ?? ''),
-        quantity: parseInt(String(row[4] ?? '0'), 10) || 0,
-        recorder: String(row[5] ?? ''),
-        department: String(row[6] ?? ''),
-        purpose: String(row[7] ?? ''),
-        poRef: String(row[8] ?? ''),
-        requisitionId: String(row[9] ?? ''),
-        status: normalizeStatus(String(row[10] ?? ''), type),
-      };
-    });
-
-    return NextResponse.json(entries.reverse());
+    return NextResponse.json(entries.reverse()); // newest first
   } catch (error) {
     console.error('Error fetching history from Google Sheets:', error);
     return NextResponse.json([]);
@@ -136,15 +125,12 @@ export async function POST(request: NextRequest) {
       type === 'OUT' ? `REQ-${Date.now()}` : `IN-${Date.now()}`;
     const status: HistoryStatus = type === 'IN' ? 'COMPLETED' : 'PENDING';
 
-    // For IN (Receive Goods), validate items exist and add stock immediately.
-    // For OUT (Requisition request), DO NOT touch stock — wait for warehouse approval.
+    // IN (Receive Goods) → validate items + add stock immediately.
+    // OUT (requisition) → DO NOT touch stock; warehouse approval handles deduction.
     if (type === 'IN') {
       const schema = await readItemsSheet();
       if (!schema) {
-        return NextResponse.json(
-          { error: 'อ่านตารางสต็อกไม่ได้' },
-          { status: 500 },
-        );
+        return NextResponse.json({ error: 'อ่านตารางสต็อกไม่ได้' }, { status: 500 });
       }
       const stockIndex = new Map<string, { rowNumber: number; currentStock: number }>();
       for (const r of schema.rows) {
@@ -176,7 +162,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Append history rows (one per item, sharing the same requisitionId)
+    // Append history rows. Columns:
+    //   A วันที่ | B ประเภท | C รหัสรายการ | D ชื่อรายการ | E จำนวน |
+    //   F ชื่อผู้บันทึก | G แผนก | H วัตถุประสงค์ | I รหัส PO/PX |
+    //   J requisitionId | K status   (J, K are system columns)
     const historyValues = items.map((it) => [
       now,
       type,

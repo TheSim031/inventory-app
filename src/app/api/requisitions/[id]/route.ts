@@ -1,23 +1,24 @@
-import { getSheets, getSheetNames, readItemsSheet } from '@/lib/googleSheets';
+import {
+  getSheets,
+  getSheetNames,
+  readItemsSheet,
+  readHistorySheet,
+  HISTORY_STATUS_COL,
+} from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
 type Action = 'APPROVE' | 'REJECT';
-
 type PatchBody = { action: Action };
-
-const HISTORY_RANGE = 'A:K';
-const STATUS_COL = 'K';
 
 /**
  * Approve or reject a pending requisition.
  *
  * - APPROVE: validate aggregate stock across all rows of the requisition,
- *   deduct stock from the items sheet, then flip every matching history
- *   row to status=COMPLETED. Validation is done up-front so we never
+ *   deduct from the items sheet, then flip every matching history row to
+ *   status=COMPLETED. Validation runs up-front so a partial failure can't
  *   half-apply a deduction.
- * - REJECT: just mark every matching history row as REJECTED; stock
- *   is untouched.
+ * - REJECT: just mark every matching history row REJECTED; stock untouched.
  */
 export async function PATCH(
   request: NextRequest,
@@ -44,47 +45,20 @@ export async function PATCH(
   }
 
   try {
-    const historyRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
-    });
-    const historyRows = historyRes.data.values || [];
-    if (historyRows.length <= 1) {
-      return NextResponse.json({ error: 'ไม่พบใบเบิก' }, { status: 404 });
+    const historyRows = await readHistorySheet();
+    if (!historyRows) {
+      return NextResponse.json({ error: 'อ่านตารางประวัติไม่ได้' }, { status: 500 });
     }
 
-    type MatchedRow = {
-      sheetRow: number; // 1-based
-      code: string;
-      name: string;
-      quantity: number;
-      status: string;
-      recorder: string;
-      department: string;
-    };
-
-    const matched: MatchedRow[] = [];
-    for (let i = 1; i < historyRows.length; i++) {
-      const row = historyRows[i] || [];
-      const rowReqId = String(row[9] ?? '').trim();
-      const rowType = row[1];
-      if (rowType !== 'OUT' || rowReqId !== id) continue;
-      matched.push({
-        sheetRow: i + 1,
-        code: String(row[2] ?? ''),
-        name: String(row[3] ?? ''),
-        quantity: parseInt(String(row[4] ?? '0'), 10) || 0,
-        status: String(row[10] ?? '').trim().toUpperCase(),
-        recorder: String(row[5] ?? ''),
-        department: String(row[6] ?? ''),
-      });
-    }
+    const matched = historyRows.filter(
+      (r) => r.type === 'OUT' && r.requisitionId.trim() === id,
+    );
 
     if (matched.length === 0) {
       return NextResponse.json({ error: `ไม่พบใบเบิก ${id}` }, { status: 404 });
     }
 
-    const allPending = matched.every((r) => r.status === 'PENDING');
+    const allPending = matched.every((r) => r.status.trim().toUpperCase() === 'PENDING');
     if (!allPending) {
       return NextResponse.json(
         { error: 'ใบเบิกนี้ถูกประมวลผลไปแล้ว ไม่สามารถดำเนินการซ้ำได้' },
@@ -105,7 +79,8 @@ export async function PATCH(
         stockIndex.set(r.code, { rowNumber: r.rowNumber, currentStock: r.stock });
       }
 
-      // Validate aggregate quantities across all rows before mutating anything.
+      // Validate aggregate quantities (same code may appear multiple times)
+      // before mutating anything.
       const stockChanges = new Map<string, number>();
       for (const m of matched) {
         const entry = stockIndex.get(m.code);
@@ -124,7 +99,6 @@ export async function PATCH(
         stockChanges.set(m.code, newStock);
       }
 
-      // Apply stock deductions
       await Promise.all(
         Array.from(stockChanges.entries()).map(([code, newStock]) => {
           const rowNumber = stockIndex.get(code)!.rowNumber;
@@ -137,12 +111,11 @@ export async function PATCH(
         }),
       );
 
-      // Mark every matched history row as COMPLETED
       await Promise.all(
         matched.map((m) =>
           sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: `${SHEET_HISTORY}!${STATUS_COL}${m.sheetRow}`,
+            range: `${SHEET_HISTORY}!${HISTORY_STATUS_COL}${m.sheetRow}`,
             valueInputOption: 'USER_ENTERED',
             requestBody: { values: [['COMPLETED']] },
           }),
@@ -164,7 +137,7 @@ export async function PATCH(
       matched.map((m) =>
         sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${SHEET_HISTORY}!${STATUS_COL}${m.sheetRow}`,
+          range: `${SHEET_HISTORY}!${HISTORY_STATUS_COL}${m.sheetRow}`,
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [['REJECTED']] },
         }),
