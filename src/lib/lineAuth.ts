@@ -34,7 +34,12 @@ export function getLineLoginConfig(
     process.env.LINE_LOGIN_CHANNEL_SECRET ||
     process.env.LINE_CLIENT_SECRET ||
     '';
-  const oaBasicId = process.env.LINE_OA_BASIC_ID || '';
+  const oaBasicId =
+    process.env.LINE_OA_BASIC_ID ||
+    process.env.LINE_OA_ID ||
+    process.env.LINE_BASIC_ID ||
+    process.env.OA_BASIC_ID ||
+    '';
 
   if (!channelId || !channelSecret) return null;
 
