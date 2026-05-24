@@ -80,7 +80,7 @@
 .inputGroup input:focus,
 .inputGroup textarea:focus {
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .inputGroup textarea {
@@ -262,7 +262,7 @@
 
 .select:focus {
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .searchBox {

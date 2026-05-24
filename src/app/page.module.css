@@ -5,69 +5,121 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
+  background:
+    radial-gradient(ellipse at top, rgba(220, 38, 38, 0.06), transparent 60%),
+    linear-gradient(135deg, #FFFFFF 0%, #F5F5F5 100%);
 }
 
 .header {
   text-align: center;
-  margin-bottom: 4rem;
+  margin-bottom: 3rem;
 }
 
 .header h1 {
   font-size: 2.5rem;
   color: var(--text-primary);
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.header h1 span {
+  color: var(--primary-color);
 }
 
 .header p {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .grid {
-  display: flex;
-  gap: 2rem;
-  max-width: 800px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 1100px;
   width: 100%;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .grid {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    max-width: 480px;
   }
 }
 
 .card {
-  flex: 1;
+  position: relative;
   background: var(--surface-color);
-  padding: 3rem 2rem;
+  padding: 2.5rem 1.75rem;
   border-radius: var(--radius-lg);
   text-align: center;
   text-decoration: none;
   color: inherit;
   box-shadow: var(--shadow-md);
-  transition: all 0.3s ease;
-  border: 1px solid var(--border-color);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  border: 2px solid var(--border-color);
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: var(--border-color);
+  transition: background 0.25s ease;
 }
 
 .card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-6px);
   box-shadow: var(--shadow-lg);
   border-color: var(--primary-color);
 }
 
+.card:hover::before {
+  background: var(--primary-color);
+}
+
+.cardAccent::before {
+  background: var(--primary-color);
+}
+
+.cardDark::before {
+  background: var(--dark-surface);
+}
+
 .icon {
-  font-size: 4rem;
-  margin-bottom: 1.5rem;
+  font-size: 3.25rem;
+  margin-bottom: 1.25rem;
+  line-height: 1;
 }
 
 .card h2 {
-  font-size: 1.5rem;
+  font-size: 1.35rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.card h2 small {
+  display: block;
+  font-size: 0.7rem;
   color: var(--primary-color);
-  margin-bottom: 1rem;
+  letter-spacing: 0.2em;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
 }
 
 .card p {
   color: var(--text-secondary);
   line-height: 1.6;
+  font-size: 0.92rem;
 }

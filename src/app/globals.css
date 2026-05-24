@@ -1,19 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
+/* ─── Sporty Theme: White / Red / Black ───
+   Sharp, high-contrast palette. Red accents pop against near-black text
+   on a pure white surface — racing-stripe energy without going garish. */
 :root {
-  --primary-color: #4F46E5; /* Indigo 600 */
-  --primary-hover: #4338CA;
-  --bg-color: #F8FAFC; /* Slate 50 */
-  --surface-color: #FFFFFF;
-  --text-primary: #0F172A; /* Slate 900 */
-  --text-secondary: #64748B; /* Slate 500 */
-  --danger-color: #EF4444;
-  --success-color: #10B981;
-  --border-color: #E2E8F0;
-  
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --primary-color: #DC2626;        /* Sporty Red */
+  --primary-hover: #B91C1C;        /* Deeper red on hover */
+  --primary-soft: rgba(220, 38, 38, 0.08);
+  --bg-color: #F5F5F5;             /* Soft off-white page bg */
+  --surface-color: #FFFFFF;        /* Card / panel white */
+  --text-primary: #0A0A0A;         /* Near-black headings */
+  --text-secondary: #4B5563;       /* Dark slate body */
+  --text-muted: #6B7280;
+  --danger-color: #DC2626;
+  --success-color: #16A34A;
+  --warning-color: #F59E0B;
+  --border-color: #E5E5E5;
+  --border-strong: #111111;        /* Bold borders for sporty accents */
+  --dark-surface: #0A0A0A;
+  --dark-surface-soft: #1F1F1F;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 25px -5px rgb(0 0 0 / 0.18), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-red: 0 6px 18px -4px rgba(220, 38, 38, 0.45);
   --radius-md: 0.5rem;
   --radius-lg: 1rem;
 }
@@ -39,7 +49,7 @@ button {
   background: none;
 }
 
-input, textarea {
+input, textarea, select {
   font-family: inherit;
 }
 
@@ -60,10 +70,22 @@ input, textarea {
 
 /* ─── Company header (top-center, all pages) ─── */
 .company-header {
-  background: var(--surface-color);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0.75rem 1rem;
+  background: var(--dark-surface);
+  color: #fff;
+  border-bottom: 4px solid var(--primary-color);
+  padding: 0.85rem 1rem;
   box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.company-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-color) 40%, #000 40%, #000 60%, var(--primary-color) 60%);
 }
 
 .company-header-inner {
@@ -81,26 +103,25 @@ input, textarea {
   width: 44px;
   height: 44px;
   border-radius: var(--radius-md);
-  background: var(--bg-color);
-  border: 1px dashed var(--border-color);
+  background: #fff;
+  border: 2px solid var(--primary-color);
   flex-shrink: 0;
-  /* Logo slot — replace this rule (or drop an <img>/<Image> child) when the logo is ready */
-  background-image: linear-gradient(135deg, #E2E8F0 25%, transparent 25%, transparent 50%, #E2E8F0 50%, #E2E8F0 75%, transparent 75%);
-  background-size: 8px 8px;
-  opacity: 0.45;
+  background-image: linear-gradient(135deg, transparent 45%, var(--primary-color) 45%, var(--primary-color) 55%, transparent 55%);
 }
 
 .company-name {
   font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.01em;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.03em;
   margin: 0;
+  text-transform: uppercase;
 }
 
 @media (max-width: 640px) {
   .company-name {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
   }
 }
 
@@ -114,13 +135,51 @@ input, textarea {
   left: 12px;
   bottom: 10px;
   z-index: 40;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.85);
   padding: 0.25rem 0.6rem;
   border-radius: 9999px;
   border: 1px solid var(--border-color);
   pointer-events: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   backdrop-filter: blur(6px);
+}
+
+/* ─── Print styles (used by /out/[id] pick page) ─── */
+@media print {
+  /* Hide global chrome when printing */
+  .company-header,
+  .dev-credit,
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Wrappers visible only on screen */
+  .screen-only {
+    display: none !important;
+  }
+
+  /* Sheets meant to be printed */
+  .print-only {
+    display: block !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+}
+
+@media screen {
+  .print-only {
+    display: none;
+  }
 }

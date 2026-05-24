@@ -12,17 +12,25 @@ import { sendLineNotification } from '@/lib/lineNotify';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-type Action = 'APPROVE' | 'REJECT';
-type PatchBody = { action: Action };
+type Action = 'CONFIRM_PICK' | 'REJECT';
+type ItemStatus = 'PICKED' | 'OUT_OF_STOCK';
+type PatchBody = {
+  action: Action;
+  // Required for CONFIRM_PICK — same order as items returned by GET /api/requisitions
+  itemStatuses?: ItemStatus[];
+};
 
 /**
- * Approve or reject a pending requisition.
+ * Confirm pick (deduct stock) or reject a pending requisition.
  *
- * - APPROVE: validate aggregate stock across all rows of the requisition,
- *   deduct from the items sheet, then flip every matching history row to
- *   status=COMPLETED. Validation runs up-front so a partial failure can't
- *   half-apply a deduction.
- * - REJECT: just mark every matching history row REJECTED; stock untouched.
+ * CONFIRM_PICK: body.itemStatuses is an array aligned 1:1 with the OUT history
+ * rows for this requisition (in sheet order). For each row:
+ *   - PICKED       → mark row COMPLETED, deduct quantity from stock
+ *   - OUT_OF_STOCK → mark row REJECTED, no stock change
+ * Aggregate stock validation runs up-front so a partial failure can't
+ * half-apply a deduction.
+ *
+ * REJECT: mark every OUT row of this requisition REJECTED; stock untouched.
  */
 export async function PATCH(
   request: NextRequest,
@@ -52,8 +60,11 @@ export async function PATCH(
   }
 
   const action = body.action;
-  if (action !== 'APPROVE' && action !== 'REJECT') {
-    return NextResponse.json({ error: 'action ต้องเป็น APPROVE หรือ REJECT' }, { status: 400 });
+  if (action !== 'CONFIRM_PICK' && action !== 'REJECT') {
+    return NextResponse.json(
+      { error: 'action ต้องเป็น CONFIRM_PICK หรือ REJECT' },
+      { status: 400 },
+    );
   }
 
   try {
@@ -80,8 +91,25 @@ export async function PATCH(
 
     const recorder = matched[0].recorder;
     const department = matched[0].department;
+    const purpose = matched[0].purpose;
 
-    if (action === 'APPROVE') {
+    if (action === 'CONFIRM_PICK') {
+      const itemStatuses = body.itemStatuses;
+      if (!Array.isArray(itemStatuses) || itemStatuses.length !== matched.length) {
+        return NextResponse.json(
+          { error: `จำนวน itemStatuses (${itemStatuses?.length ?? 0}) ต้องเท่ากับจำนวนรายการ (${matched.length})` },
+          { status: 400 },
+        );
+      }
+      for (const s of itemStatuses) {
+        if (s !== 'PICKED' && s !== 'OUT_OF_STOCK') {
+          return NextResponse.json(
+            { error: `itemStatuses ต้องเป็น PICKED หรือ OUT_OF_STOCK เท่านั้น (พบ "${s}")` },
+            { status: 400 },
+          );
+        }
+      }
+
       const schema = await readItemsSheet();
       if (!schema) {
         return NextResponse.json({ error: 'อ่านตารางสต็อกไม่ได้' }, { status: 500 });
@@ -91,26 +119,37 @@ export async function PATCH(
         stockIndex.set(r.code, { rowNumber: r.rowNumber, currentStock: r.stock });
       }
 
-      // Validate aggregate quantities (same code may appear multiple times)
-      // before mutating anything.
+      const pickedItems: Array<{ name: string; quantity: number }> = [];
+      const outOfStockItems: Array<{ name: string; quantity: number }> = [];
+
+      // Validate stock for PICKED items aggregate before mutating anything.
       const stockChanges = new Map<string, number>();
-      for (const m of matched) {
+      for (let i = 0; i < matched.length; i++) {
+        const m = matched[i];
+        if (itemStatuses[i] === 'OUT_OF_STOCK') {
+          outOfStockItems.push({ name: m.name, quantity: m.quantity });
+          continue;
+        }
         const entry = stockIndex.get(m.code);
         if (!entry) {
-          const message = `ไม่พบรหัสสินค้า "${m.code}" (${m.name}) ในสต็อก`;
-          sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
-          return NextResponse.json({ error: message }, { status: 400 });
+          return NextResponse.json(
+            { error: `ไม่พบรหัสสินค้า "${m.code}" (${m.name}) ในสต็อก` },
+            { status: 400 },
+          );
         }
         const baseStock = stockChanges.get(m.code) ?? entry.currentStock;
         const newStock = baseStock - m.quantity;
         if (newStock < 0) {
-          const message = `สินค้า "${m.name}" (${m.code}) มีไม่พอ (คงเหลือ ${baseStock} ต้องการ ${m.quantity})`;
-          sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
-          return NextResponse.json({ error: message }, { status: 400 });
+          return NextResponse.json(
+            { error: `สินค้า "${m.name}" (${m.code}) มีไม่พอ (คงเหลือ ${baseStock} ต้องการ ${m.quantity}) — ทำเครื่องหมาย "พัสดุหมด" แทน` },
+            { status: 400 },
+          );
         }
         stockChanges.set(m.code, newStock);
+        pickedItems.push({ name: m.name, quantity: m.quantity });
       }
 
+      // Deduct stock for PICKED items.
       await Promise.all(
         Array.from(stockChanges.entries()).map(([code, newStock]) => {
           const rowNumber = stockIndex.get(code)!.rowNumber;
@@ -123,28 +162,41 @@ export async function PATCH(
         }),
       );
 
+      // Mark each history row with its individual status.
       await Promise.all(
-        matched.map((m) =>
+        matched.map((m, i) =>
           sheets.spreadsheets.values.update({
             spreadsheetId,
             range: `${SHEET_HISTORY}!${HISTORY_STATUS_COL}${m.sheetRow}`,
             valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [['COMPLETED']] },
+            requestBody: {
+              values: [[itemStatuses[i] === 'PICKED' ? 'COMPLETED' : 'REJECTED']],
+            },
           }),
         ),
       );
 
-      sendLineNotification('OUT_RECORDED', {
+      // Notify the requester. Currently broadcasts to OA followers; Phase 4
+      // will route to recipientLineUserId once LINE Login is in place.
+      sendLineNotification('PICK_COMPLETE', {
         recorder,
-        department,
-        purpose: `อนุมัติใบเบิก ${id}`,
-        itemsCount: matched.length,
+        requisitionId: id,
+        pickedItems,
+        outOfStockItems,
       }).catch(console.error);
 
-      return NextResponse.json({ success: true, action, itemsCount: matched.length });
+      return NextResponse.json({
+        success: true,
+        action,
+        pickedCount: pickedItems.length,
+        outOfStockCount: outOfStockItems.length,
+        recorder,
+        department,
+        purpose,
+      });
     }
 
-    // REJECT
+    // REJECT — mark every row REJECTED, no stock change.
     await Promise.all(
       matched.map((m) =>
         sheets.spreadsheets.values.update({

@@ -3,7 +3,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
+  background:
+    radial-gradient(ellipse at top, rgba(220, 38, 38, 0.08), transparent 60%),
+    linear-gradient(135deg, #FFFFFF 0%, #F5F5F5 100%);
   padding: 1.5rem;
 }
 
@@ -15,7 +17,8 @@
   width: 100%;
   max-width: 400px;
   text-align: center;
-  border: 1px solid var(--border-color);
+  border: 2px solid var(--text-primary);
+  border-top: 6px solid var(--primary-color);
 }
 
 .icon {
@@ -73,7 +76,7 @@
 
 .inputGroup input:focus {
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .submitBtn {

@@ -24,7 +24,7 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push('/warehouse');
+        router.push('/in');
         router.refresh();
       } else {
         const data = await res.json();
