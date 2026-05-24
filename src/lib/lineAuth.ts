@@ -10,7 +10,20 @@ export type LineLoginConfig = {
   oaBasicId: string; // e.g. "@123abcde" — shown to first-time users so they can add the OA
 };
 
-export function getLineLoginConfig(): LineLoginConfig | null {
+/**
+ * Build the LINE config bound to a specific incoming request. We derive the
+ * callback's base URL from the request itself (request.nextUrl.origin) so
+ * the redirect_uri always matches whichever domain the user came in on —
+ * no fragile env-var coordination required between the app and the LINE
+ * channel's registered callback URLs.
+ *
+ * Falls back to NEXT_PUBLIC_BASE_URL → VERCEL_URL for callers that don't
+ * have a request handy (e.g. server-side utilities). Returns null if the
+ * channel credentials are missing.
+ */
+export function getLineLoginConfig(
+  request?: { nextUrl: { origin: string } } | { url: string },
+): LineLoginConfig | null {
   // Accept either the "_CHANNEL_" naming (what LINE docs use) or the
   // "_CLIENT_" naming (what some teams prefer to mirror OAuth jargon).
   const channelId =
@@ -21,27 +34,38 @@ export function getLineLoginConfig(): LineLoginConfig | null {
     process.env.LINE_LOGIN_CHANNEL_SECRET ||
     process.env.LINE_CLIENT_SECRET ||
     '';
-  const baseUrl =
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.VERCEL_URL ||
-    '';
   const oaBasicId = process.env.LINE_OA_BASIC_ID || '';
 
   if (!channelId || !channelSecret) return null;
 
-  // Normalize base URL (NEXT_PUBLIC_BASE_URL is preferred; VERCEL_URL has no scheme)
-  let normalized = baseUrl;
-  if (normalized && !/^https?:\/\//i.test(normalized)) {
-    normalized = `https://${normalized}`;
+  // Prefer the live request's origin — that's the URL the user is actually
+  // browsing from, which is what LINE will see on the callback.
+  let baseUrl = '';
+  if (request) {
+    if ('nextUrl' in request) {
+      baseUrl = request.nextUrl.origin;
+    } else if ('url' in request) {
+      try {
+        baseUrl = new URL(request.url).origin;
+      } catch {
+        baseUrl = '';
+      }
+    }
   }
-  if (!normalized) {
-    normalized = 'http://localhost:3000';
+
+  // Fallbacks (legacy / non-request callers)
+  if (!baseUrl) {
+    baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL || '';
+    if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+      baseUrl = `https://${baseUrl}`;
+    }
   }
+  if (!baseUrl) baseUrl = 'http://localhost:3000';
 
   return {
     channelId,
     channelSecret,
-    redirectUri: `${normalized.replace(/\/$/, '')}/api/auth/line/callback`,
+    redirectUri: `${baseUrl.replace(/\/$/, '')}/api/auth/line/callback`,
     oaBasicId,
   };
 }

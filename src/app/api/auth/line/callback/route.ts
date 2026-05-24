@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * step) — defaults to /request.
  */
 export async function GET(request: NextRequest) {
-  const cfg = getLineLoginConfig();
+  const cfg = getLineLoginConfig(request);
   if (!cfg) {
     return NextResponse.json({ error: 'LINE Login not configured' }, { status: 503 });
   }

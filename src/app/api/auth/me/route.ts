@@ -11,7 +11,7 @@ export const revalidate = 0;
  */
 export function GET(request: NextRequest) {
   const session = decodeLineSession(request.cookies.get('line_user')?.value);
-  const cfg = getLineLoginConfig();
+  const cfg = getLineLoginConfig(request);
 
   return NextResponse.json({
     user: session,

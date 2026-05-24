@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * The callback handler verifies the state to defeat CSRF.
  */
 export function GET(request: NextRequest) {
-  const cfg = getLineLoginConfig();
+  const cfg = getLineLoginConfig(request);
   if (!cfg) {
     return NextResponse.json(
       {
