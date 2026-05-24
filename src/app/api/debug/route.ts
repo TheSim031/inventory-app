@@ -1,6 +1,9 @@
 import { getSheets, getSheetNames, readItemsSheet } from '@/lib/googleSheets';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Diagnostic endpoint — safe to expose: never returns credential values,
  * only boolean presence flags and metadata about which sheets the service

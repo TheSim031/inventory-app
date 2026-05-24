@@ -8,6 +8,9 @@ import {
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type HistoryType = 'IN' | 'OUT';
 type HistoryStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
 
@@ -69,7 +72,7 @@ export async function GET() {
 
     return NextResponse.json(entries.reverse()); // newest first
   } catch (error) {
-    console.error('Error fetching history from Google Sheets:', error);
+    console.error('Google Sheets Error (GET /api/history):', error);
     return NextResponse.json([]);
   }
 }
@@ -209,7 +212,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('Error recording history:', message);
+    console.error('Google Sheets Error (POST /api/history):', err);
     return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${message}` }, { status: 500 });
   }
 }

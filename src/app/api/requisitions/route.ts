@@ -1,6 +1,9 @@
 import { readHistorySheet } from '@/lib/googleSheets';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
 
 export type RequisitionItem = {
@@ -65,7 +68,7 @@ export async function GET() {
     const result = order.reverse().map((id) => groups.get(id)!);
     return NextResponse.json(result);
   } catch (error) {
-    console.error('Error fetching requisitions:', error);
+    console.error('Google Sheets Error (GET /api/requisitions):', error);
     return NextResponse.json([]);
   }
 }

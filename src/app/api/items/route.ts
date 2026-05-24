@@ -1,6 +1,11 @@
 import { readItemsSheet } from '@/lib/googleSheets';
 import { NextResponse } from 'next/server';
 
+// Force every request to hit Google Sheets fresh — never cache the response
+// on Vercel's Data Cache. Stock changes need to be visible immediately.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export type Item = {
   id: string;
   code: string;
@@ -14,6 +19,7 @@ export async function GET() {
   try {
     const schema = await readItemsSheet();
     if (!schema) {
+      console.error('Google Sheets Error: readItemsSheet returned null (check /api/debug)');
       return NextResponse.json([]);
     }
     const items: Item[] = schema.rows.map((r) => ({
@@ -26,7 +32,7 @@ export async function GET() {
     }));
     return NextResponse.json(items);
   } catch (error) {
-    console.error('Error fetching items from Google Sheets:', error);
+    console.error('Google Sheets Error (GET /api/items):', error);
     return NextResponse.json([]);
   }
 }

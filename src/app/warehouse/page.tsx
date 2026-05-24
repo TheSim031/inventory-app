@@ -5,7 +5,10 @@ import useSWR from 'swr';
 import { useRouter } from 'next/navigation';
 import styles from './warehouse.module.css';
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+export const dynamic = 'force-dynamic';
+
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store' }).then((res) => res.json());
 
 type Item = {
   id: string;

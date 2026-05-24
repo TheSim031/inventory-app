@@ -93,14 +93,23 @@ const DATA_START_INDEX = 2; // zero-based → sheet row 3
 export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const { SHEET_ITEMS } = getSheetNames();
-  if (!sheets || !spreadsheetId) return null;
+  if (!sheets || !spreadsheetId) {
+    console.error('Google Sheets Error: missing credentials or spreadsheet id');
+    return null;
+  }
 
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${SHEET_ITEMS}!A:Z`,
-  });
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SHEET_ITEMS}!A:Z`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readItemsSheet):', error);
+    return null;
+  }
 
-  const rawRows = response.data.values || [];
   if (rawRows.length <= HEADER_ROW_INDEX) {
     return { rows: [], stockColLetter: 'D' };
   }
@@ -209,14 +218,23 @@ export type HistoryRow = {
 export async function readHistorySheet(): Promise<HistoryRow[] | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const { SHEET_HISTORY } = getSheetNames();
-  if (!sheets || !spreadsheetId) return null;
+  if (!sheets || !spreadsheetId) {
+    console.error('Google Sheets Error: missing credentials or spreadsheet id');
+    return null;
+  }
 
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
-  });
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readHistorySheet):', error);
+    return null;
+  }
 
-  const rawRows = response.data.values || [];
   if (rawRows.length <= HISTORY_HEADER_ROW_INDEX) return [];
 
   const result: HistoryRow[] = [];

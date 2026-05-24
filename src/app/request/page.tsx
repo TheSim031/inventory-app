@@ -4,7 +4,10 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import styles from './request.module.css';
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+export const dynamic = 'force-dynamic';
+
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store' }).then((res) => res.json());
 
 const DEPARTMENTS = [
   'แผนกประกอบ Basevalue',

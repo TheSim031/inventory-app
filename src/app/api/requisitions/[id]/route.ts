@@ -8,6 +8,9 @@ import {
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type Action = 'APPROVE' | 'REJECT';
 type PatchBody = { action: Action };
 
@@ -147,7 +150,7 @@ export async function PATCH(
     return NextResponse.json({ success: true, action, itemsCount: matched.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('Error processing requisition:', message);
+    console.error('Google Sheets Error (PATCH /api/requisitions/[id]):', err);
     return NextResponse.json({ error: `เกิดข้อผิดพลาด: ${message}` }, { status: 500 });
   }
 }
