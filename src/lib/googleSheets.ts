@@ -78,8 +78,18 @@ function findHeaderIndex(headers: string[], candidates: string[]): number {
 
 /**
  * Read the items sheet with header-aware column mapping.
- * Falls back to positional A:E layout if no headers are detected.
+ *
+ * Sheet layout (PIONEER stock sheet):
+ *   Row 1  — merged title cell ("PIONEER — ระบบจัดการสต็อกสินค้า"), skipped
+ *   Row 2  — header row: รหัส | ชื่อรายการ | หมวดหมู่ | คงเหลือ | สถานะ
+ *   Row 3+ — item data
+ *
+ * Header matching falls back to positional A:E if a header name can't be
+ * located, so a future tweak to column names won't silently break reads.
  */
+const HEADER_ROW_INDEX = 1; // zero-based → sheet row 2
+const DATA_START_INDEX = 2; // zero-based → sheet row 3
+
 export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const { SHEET_ITEMS } = getSheetNames();
@@ -91,15 +101,15 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   });
 
   const rawRows = response.data.values || [];
-  if (rawRows.length === 0) {
+  if (rawRows.length <= HEADER_ROW_INDEX) {
     return { rows: [], stockColLetter: 'D' };
   }
 
-  const headers = (rawRows[0] || []).map((h) => String(h ?? ''));
+  const headers = (rawRows[HEADER_ROW_INDEX] || []).map((h) => String(h ?? ''));
 
-  const codeIdx = findHeaderIndex(headers, ['รหัสสินค้า', 'รหัส', 'code', 'item code', 'sku', 'id']);
-  const nameIdx = findHeaderIndex(headers, ['ชื่อสินค้า', 'ชื่อ', 'name', 'item name', 'description']);
-  const catIdx = findHeaderIndex(headers, ['ประเภท', 'หมวดหมู่', 'หมวด', 'category', 'type']);
+  const codeIdx = findHeaderIndex(headers, ['รหัส', 'รหัสสินค้า', 'code', 'item code', 'sku', 'id']);
+  const nameIdx = findHeaderIndex(headers, ['ชื่อรายการ', 'ชื่อสินค้า', 'ชื่อ', 'name', 'item name', 'description']);
+  const catIdx = findHeaderIndex(headers, ['หมวดหมู่', 'หมวด', 'ประเภท', 'category', 'type']);
   const stockIdx = findHeaderIndex(headers, [
     'คงเหลือ',
     'สต็อก',
@@ -126,12 +136,12 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   };
 
   const items: SheetItemRow[] = [];
-  for (let i = 1; i < rawRows.length; i++) {
+  for (let i = DATA_START_INDEX; i < rawRows.length; i++) {
     const row = rawRows[i] || [];
     const code = String(row[cIdx] ?? '').trim();
     if (!code) continue; // skip rows without a code
     items.push({
-      rowNumber: i + 1,
+      rowNumber: i + 1, // 1-based sheet row
       code,
       name: String(row[nIdx] ?? '').trim(),
       category: String(row[ctIdx] ?? '').trim(),
