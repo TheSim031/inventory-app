@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { uploadImageToDrive } from '@/lib/googleDrive';
+import { uploadImageToBlob } from '@/lib/blob';
 import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -49,13 +49,13 @@ export async function POST(request: NextRequest) {
 
   let result;
   try {
-    result = await uploadImageToDrive({ base64, mimeType, filename });
+    result = await uploadImageToBlob({ base64, mimeType, filename });
   } catch (err) {
-    console.error('POST /api/uploads: uploadImageToDrive threw:', err);
+    console.error('POST /api/uploads: uploadImageToBlob threw:', err);
     return NextResponse.json(
       {
         error:
-          'อัปโหลด Drive ล้มเหลวแบบไม่คาดคิด — ดู Vercel logs (POST /api/uploads)',
+          'อัปโหลดรูปล้มเหลวแบบไม่คาดคิด — ดู Vercel logs (POST /api/uploads)',
         reason: 'UNKNOWN',
       },
       { status: 500 },
@@ -63,12 +63,11 @@ export async function POST(request: NextRequest) {
   }
   if (!result.ok) {
     const REASON_LABEL: Record<typeof result.reason, string> = {
-      NOT_CONFIGURED: 'Google Drive ยังไม่ได้ตั้งค่าใน server',
-      API_DISABLED: 'Google Drive API ยังไม่ได้เปิดใน Google Cloud project',
-      AUTH_DENIED: 'service account ไม่มีสิทธิ์เข้า Drive',
-      STORAGE_QUOTA: 'Service Account ไม่มีโควต้าเก็บไฟล์ — โฟลเดอร์ต้องอยู่ใน Shared Drive',
-      PERMISSION_GRANT_FAIL: 'อัปโหลดไฟล์ได้ แต่ตั้งสิทธิ์แชร์ไม่สำเร็จ',
-      UNKNOWN: 'อัปโหลด Drive ไม่สำเร็จ',
+      NOT_CONFIGURED:
+        'Vercel Blob ยังไม่ได้ตั้งค่า — ต้องเปิด Blob store ใน Vercel dashboard',
+      AUTH_DENIED: 'token Blob ไม่ถูกต้องหรือ store ถูกลบ',
+      TOO_LARGE: 'ไฟล์ใหญ่เกิน plan ของ Blob',
+      UNKNOWN: 'อัปโหลดรูปไม่สำเร็จ',
     };
     const label = REASON_LABEL[result.reason];
     const detail = result.detail ? ` — ${result.detail}` : '';

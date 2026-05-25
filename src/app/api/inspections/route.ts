@@ -10,6 +10,7 @@ import {
   type InspectionQcImagesByCode,
 } from '@/lib/googleSheets';
 import { deleteDriveFile } from '@/lib/googleDrive';
+import { deleteBlob, isBlobUrl } from '@/lib/blob';
 import { sendLineToRoles } from '@/lib/lineNotify';
 import { requireAuth, requireRoles, getSessionContext } from '@/lib/auth';
 
@@ -306,32 +307,44 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  // Collect Drive file IDs to clean up before nuking the sheet rows.
-  const driveFileIds: string[] = [];
+  // Collect every image (Blob or legacy Drive) to clean up before nuking
+  // the sheet rows. We need the URL too so the cleanup can route to the
+  // correct backend — Blob uses URLs, Drive uses opaque file ids.
+  const images: InspectionImage[] = [];
   for (const r of targets) {
-    driveFileIds.push(
-      ...r.warehouseImages.bill.map((i) => i.fileId),
-      ...r.warehouseImages.po.map((i) => i.fileId),
-      ...r.warehouseImages.items.map((i) => i.fileId),
-      ...Object.values(r.qcImages).flat().map((i) => i.fileId),
+    images.push(
+      ...r.warehouseImages.bill,
+      ...r.warehouseImages.po,
+      ...r.warehouseImages.items,
+      ...Object.values(r.qcImages).flat(),
     );
   }
 
   const deleted = await deleteInspectionRows(targets.map((r) => r.id));
 
-  // Await Drive cleanup so serverless runtimes (e.g. Vercel) don't terminate
-  // before background deletion finishes.
-  const uniqueDriveIds = Array.from(new Set(driveFileIds));
-  const cleanupResults = await Promise.allSettled(
-    uniqueDriveIds.map((fileId) => deleteDriveFile(fileId)),
+  // Dedup by fileId, then dispatch each image to whichever backend hosts
+  // it. Await all cleanup so serverless runtimes don't terminate mid-flight.
+  const uniqueImages = Array.from(
+    new Map(images.map((i) => [i.fileId, i])).values(),
   );
-  const driveDeleted = cleanupResults.filter((r) => r.status === 'fulfilled').length;
-  const driveFailed = cleanupResults.length - driveDeleted;
+  const cleanupResults = await Promise.allSettled(
+    uniqueImages.map((img) =>
+      isBlobUrl(img.url) || isBlobUrl(img.fileId)
+        ? deleteBlob(img.url || img.fileId)
+        : deleteDriveFile(img.fileId),
+    ),
+  );
+  const imagesDeleted = cleanupResults.filter(
+    (r) => r.status === 'fulfilled' && r.value === true,
+  ).length;
+  const imagesFailed = cleanupResults.length - imagesDeleted;
 
   return NextResponse.json({
     deleted: deleted.length,
     ids: deleted,
-    driveDeleted,
-    driveFailed,
+    // Field names kept for response back-compat with existing UI; values
+    // now count *all* image deletions (Blob + legacy Drive).
+    driveDeleted: imagesDeleted,
+    driveFailed: imagesFailed,
   });
 }

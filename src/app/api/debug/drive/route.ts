@@ -1,26 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { google, type drive_v3 } from 'googleapis';
-import { Readable } from 'stream';
-import { getGoogleAuth } from '@/lib/googleSheets';
+import { put, del, list, head } from '@vercel/blob';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
- * Drive diagnostic endpoint. Hit it from a browser while signed in as
- * Creator or Admin and you get back, in JSON:
+ * Image-storage diagnostic. Originally a Google Drive probe — kept at
+ * the /api/debug/drive path so existing bookmarks still work — but the
+ * app moved to Vercel Blob (Drive couldn't be used: Service Accounts
+ * have no storage quota and the project's free Gmail can't host a
+ * Shared Drive). This now reports Blob health:
  *
- *   - which env vars are present (booleans + lengths, never values)
- *   - whether `drive.about.get` works at all (scope sanity check)
- *   - what `drive.files.get` reports about GOOGLE_DRIVE_FOLDER_ID
- *     (proves the SA can see the folder, and whether it lives in a
- *     Shared Drive — critical for the storage-quota trap)
- *   - whether `drive.files.list(q=parents=<folder>)` works
- *   - the result of a tiny 1-byte real upload + cleanup
+ *   - which env vars are present (BLOB_READ_WRITE_TOKEN booleans/length)
+ *   - whether `list()` works on the store (auth sanity check)
+ *   - whether a tiny real `put()` + `head()` + `del()` round-trip works
  *
- * Every step has its own try/catch and returns the *raw* googleapis
- * error object (message, code, status, errors[], response.data) so you
- * can see the actual Drive reason instead of the translated toast.
+ * Each step has its own try/catch and returns the raw error shape so
+ * the next failure is diagnosable from this JSON alone.
  */
 function requireAdminOrCreator(request: NextRequest): boolean {
   const isCreator =
@@ -32,29 +28,18 @@ function requireAdminOrCreator(request: NextRequest): boolean {
 function shapeError(err: unknown) {
   const e = err as {
     message?: string;
+    name?: string;
     code?: number | string;
     status?: number;
-    response?: { status?: number; statusText?: string; data?: unknown };
-    errors?: unknown;
+    statusText?: string;
   } | null;
   return {
+    name: e?.name,
     message: e?.message ?? String(err),
     code: e?.code,
-    status: e?.status ?? e?.response?.status,
-    statusText: e?.response?.statusText,
-    apiErrors: e?.errors,
-    responseData: e?.response?.data,
+    status: e?.status,
+    statusText: e?.statusText,
   };
-}
-
-function normalizeFolderIdEnv(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  const urlMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (urlMatch) return urlMatch[1];
-  const idMatch = trimmed.match(/\?(?:.*&)?id=([a-zA-Z0-9_-]+)/);
-  if (idMatch) return idMatch[1];
-  return trimmed;
 }
 
 export async function GET(request: NextRequest) {
@@ -65,139 +50,89 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const rawFolderEnv = process.env.GOOGLE_DRIVE_FOLDER_ID || '';
-  const folderId = normalizeFolderIdEnv(rawFolderEnv);
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
-
+  const token = process.env.BLOB_READ_WRITE_TOKEN || '';
   const env = {
-    GOOGLE_SERVICE_ACCOUNT_EMAIL_set: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    GOOGLE_SERVICE_ACCOUNT_EMAIL_preview:
-      (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').slice(0, 6) + '…',
-    GOOGLE_PRIVATE_KEY_set: !!privateKey,
-    GOOGLE_PRIVATE_KEY_length: privateKey.length,
-    GOOGLE_PRIVATE_KEY_starts_pem: privateKey.includes('BEGIN PRIVATE KEY'),
-    GOOGLE_PRIVATE_KEY_has_literal_backslash_n: privateKey.includes('\\n'),
-    GOOGLE_PRIVATE_KEY_has_real_newlines: privateKey.includes('\n'),
-    GOOGLE_DRIVE_FOLDER_ID_raw: rawFolderEnv.slice(0, 60) + (rawFolderEnv.length > 60 ? '…' : ''),
-    GOOGLE_DRIVE_FOLDER_ID_normalized: folderId,
+    BLOB_READ_WRITE_TOKEN_set: !!token,
+    BLOB_READ_WRITE_TOKEN_length: token.length,
+    BLOB_READ_WRITE_TOKEN_starts_with: token.slice(0, 18),
+    backend: 'vercel-blob',
   };
 
-  const auth = getGoogleAuth();
-  if (!auth) {
+  if (!token) {
     return NextResponse.json({
       ok: false,
-      step: 'auth',
-      reason: 'getGoogleAuth() returned null — env missing',
+      step: 'env',
+      reason: 'BLOB_READ_WRITE_TOKEN not set — enable a Blob store in Vercel dashboard',
+      hint:
+        'Vercel dashboard → Storage tab → Create Database → Blob → Connect Project. ' +
+        'Vercel will inject BLOB_READ_WRITE_TOKEN automatically into every env.',
       env,
     });
   }
 
-  const drive: drive_v3.Drive = google.drive({ version: 'v3', auth });
   const steps: Array<{ name: string; ok: boolean; data?: unknown; error?: unknown }> = [];
 
-  // Step A — drive.about.get (proves auth+scope work at all).
+  // A — list() : proves auth + store exist.
   try {
-    const about = await drive.about.get({ fields: 'user,storageQuota' });
+    const r = await list({ limit: 3 });
     steps.push({
-      name: 'about.get',
+      name: 'list (first 3)',
       ok: true,
       data: {
-        user: about.data.user,
-        storageQuota: about.data.storageQuota,
+        count: r.blobs.length,
+        sample: r.blobs.map((b) => ({
+          pathname: b.pathname,
+          size: b.size,
+          uploadedAt: b.uploadedAt,
+        })),
+        hasMore: r.hasMore,
       },
     });
   } catch (err) {
-    steps.push({ name: 'about.get', ok: false, error: shapeError(err) });
+    steps.push({ name: 'list (first 3)', ok: false, error: shapeError(err) });
   }
 
-  // Step B — folder.get on the configured GOOGLE_DRIVE_FOLDER_ID.
-  if (!folderId) {
-    steps.push({
-      name: 'folder.get',
-      ok: false,
-      error: { message: 'GOOGLE_DRIVE_FOLDER_ID is empty' },
+  // B — tiny real put + head + del round-trip.
+  const probePath = `__probe/diag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+  let probeUrl: string | undefined;
+
+  try {
+    const r = await put(probePath, Buffer.from('blob-probe'), {
+      access: 'public',
+      contentType: 'text/plain',
+      addRandomSuffix: false,
     });
-  } else {
+    probeUrl = r.url;
+    steps.push({
+      name: 'put (probe)',
+      ok: true,
+      data: { url: r.url, pathname: r.pathname, contentType: r.contentType },
+    });
+  } catch (err) {
+    steps.push({ name: 'put (probe)', ok: false, error: shapeError(err) });
+  }
+
+  if (probeUrl) {
     try {
-      const folder = await drive.files.get({
-        fileId: folderId,
-        fields:
-          'id,name,mimeType,driveId,parents,owners(emailAddress),capabilities(canAddChildren,canEdit)',
-        supportsAllDrives: true,
-      });
+      const meta = await head(probeUrl);
       steps.push({
-        name: 'folder.get',
+        name: 'head (probe)',
         ok: true,
         data: {
-          ...folder.data,
-          isSharedDrive: !!folder.data.driveId,
+          size: meta.size,
+          contentType: meta.contentType,
+          uploadedAt: meta.uploadedAt,
         },
       });
     } catch (err) {
-      steps.push({ name: 'folder.get', ok: false, error: shapeError(err) });
+      steps.push({ name: 'head (probe)', ok: false, error: shapeError(err) });
     }
-  }
 
-  // Step C — files.list children of the folder.
-  if (folderId) {
     try {
-      const list = await drive.files.list({
-        q: `'${folderId}' in parents and trashed=false`,
-        fields: 'files(id,name,mimeType,size,createdTime)',
-        pageSize: 5,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      steps.push({
-        name: 'files.list (children)',
-        ok: true,
-        data: { count: list.data.files?.length ?? 0, sample: list.data.files },
-      });
+      await del(probeUrl);
+      steps.push({ name: 'del (probe cleanup)', ok: true });
     } catch (err) {
-      steps.push({ name: 'files.list (children)', ok: false, error: shapeError(err) });
-    }
-  }
-
-  // Step D — tiny real upload then immediate delete. This catches the
-  // storageQuotaExceeded trap that only fires at upload time, not at
-  // .get / .list time.
-  if (folderId) {
-    let uploadedId: string | undefined;
-    try {
-      const probe = await drive.files.create({
-        requestBody: {
-          name: `__drive_probe_${Date.now()}.txt`,
-          parents: [folderId],
-          mimeType: 'text/plain',
-        },
-        media: { mimeType: 'text/plain', body: Readable.from(Buffer.from('probe')) },
-        fields: 'id,name,driveId,parents',
-        supportsAllDrives: true,
-      });
-      uploadedId = probe.data.id ?? undefined;
-      steps.push({
-        name: 'files.create (probe upload)',
-        ok: true,
-        data: probe.data,
-      });
-    } catch (err) {
-      steps.push({
-        name: 'files.create (probe upload)',
-        ok: false,
-        error: shapeError(err),
-      });
-    }
-    if (uploadedId) {
-      try {
-        await drive.files.delete({ fileId: uploadedId, supportsAllDrives: true });
-        steps.push({ name: 'files.delete (probe cleanup)', ok: true });
-      } catch (err) {
-        steps.push({
-          name: 'files.delete (probe cleanup)',
-          ok: false,
-          error: shapeError(err),
-        });
-      }
+      steps.push({ name: 'del (probe cleanup)', ok: false, error: shapeError(err) });
     }
   }
 
