@@ -68,16 +68,20 @@ export async function GET(request: NextRequest) {
   const denied = requireAuth(request);
   if (denied) return denied;
 
-  const url = new URL(request.url);
-  const statusFilter = url.searchParams.get('status'); // 'PENDING' | 'COMPLETED' | null
-  const rows = await readInspectionsSheet();
-  if (!rows) return NextResponse.json([]);
-  const filtered =
-    statusFilter === 'PENDING' || statusFilter === 'COMPLETED'
-      ? rows.filter((r) => r.status === statusFilter)
-      : rows;
-  // Newest first.
-  return NextResponse.json([...filtered].reverse());
+  try {
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get('status'); // 'PENDING' | 'COMPLETED' | null
+    const rows = await readInspectionsSheet();
+    if (!rows) return NextResponse.json([]);
+    const filtered =
+      statusFilter === 'PENDING' || statusFilter === 'COMPLETED'
+        ? rows.filter((r) => r.status === statusFilter)
+        : rows;
+    return NextResponse.json([...filtered].reverse());
+  } catch (error) {
+    console.error('Google Sheets Error (GET /api/inspections):', error);
+    return NextResponse.json([]);
+  }
 }
 
 export async function POST(request: NextRequest) {
