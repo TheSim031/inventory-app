@@ -32,6 +32,8 @@ async function getOrCreateRootFolder(
       q: `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: 'files(id,name)',
       spaces: 'drive',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
     const existing = search.data.files?.[0];
     if (existing?.id) {
@@ -44,6 +46,7 @@ async function getOrCreateRootFolder(
         mimeType: 'application/vnd.google-apps.folder',
       },
       fields: 'id',
+      supportsAllDrives: true,
     });
     if (created.data.id) {
       cachedRootFolderId = created.data.id;
@@ -161,6 +164,7 @@ export async function uploadImageToDrive(args: {
       requestBody: { name, parents: [folderId], mimeType: args.mimeType },
       media: { mimeType: args.mimeType, body: Readable.from(buffer) },
       fields: 'id,name',
+      supportsAllDrives: true,
     });
     fileId = created.data.id ?? undefined;
     createdName = created.data.name ?? undefined;
@@ -179,11 +183,12 @@ export async function uploadImageToDrive(args: {
     await drive.permissions.create({
       fileId,
       requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true,
     });
   } catch (permErr) {
     console.error('Google Drive: permission grant failed — rolling back upload', permErr);
     try {
-      await drive.files.delete({ fileId });
+      await drive.files.delete({ fileId, supportsAllDrives: true });
     } catch (delErr) {
       console.error('Google Drive: rollback delete also failed', delErr);
     }
@@ -209,7 +214,7 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
   const drive = getDriveClient();
   if (!drive) return false;
   try {
-    await drive.files.delete({ fileId });
+    await drive.files.delete({ fileId, supportsAllDrives: true });
     return true;
   } catch (error) {
     console.error('Google Drive Error (deleteDriveFile):', error);
