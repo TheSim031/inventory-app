@@ -69,7 +69,7 @@ async function getOrCreateRootFolder(
     }
     return null;
   } catch (error) {
-    console.error('Google Drive Error (getOrCreateRootFolder):', error);
+    logDriveError('getOrCreateRootFolder', error);
     return null;
   }
 }
@@ -94,6 +94,32 @@ export type DriveUploadResult =
 const ENABLE_DRIVE_API_HINT =
   'เปิดใช้งาน Google Drive API ใน Google Cloud Console ของ project ที่ service account สังกัด แล้วรอ 1–2 นาที';
 
+/**
+ * Pull every diagnostic field googleapis tends to attach to a Drive error
+ * and dump it to the server log. Without this you only ever see
+ * `AUTH_DENIED — ...` in the Vercel UI and have to guess between
+ * "wrong scope", "folder not shared", "API disabled", "bad key", etc.
+ */
+function logDriveError(stage: string, error: unknown): void {
+  const e = error as {
+    message?: string;
+    code?: number | string;
+    status?: number;
+    response?: { status?: number; statusText?: string; data?: unknown };
+    errors?: unknown;
+    stack?: string;
+  } | null;
+  console.error(`Google Drive Error (${stage}):`, {
+    message: e?.message,
+    code: e?.code,
+    status: e?.status ?? e?.response?.status,
+    statusText: e?.response?.statusText,
+    apiErrors: e?.errors,
+    responseData: e?.response?.data,
+  });
+  if (e?.stack) console.error(`Google Drive Error stack (${stage}):`, e.stack);
+}
+
 function classifyDriveError(error: unknown): {
   reason: DriveFailureReason;
   detail?: string;
@@ -116,10 +142,32 @@ function classifyDriveError(error: unknown): {
   const code = (error as { code?: number | string; response?: { status?: number } } | null)
     ?.code;
   const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  // Insufficient scope often comes back as 403 with a body that includes
+  // "insufficientPermissions" or "insufficient authentication scopes".
+  if (
+    lower.includes('insufficient') &&
+    (lower.includes('scope') || lower.includes('permission'))
+  ) {
+    return {
+      reason: 'AUTH_DENIED',
+      detail:
+        'OAuth scope ไม่พอ — ต้องใช้ https://www.googleapis.com/auth/drive (ขณะนี้แก้แล้วใน source — ต้อง redeploy)',
+    };
+  }
   if (code === 401 || code === 403 || status === 401 || status === 403) {
     return {
       reason: 'AUTH_DENIED',
-      detail: 'service account ไม่มีสิทธิ์ — ตรวจ env GOOGLE_SERVICE_ACCOUNT และการ share folder',
+      detail:
+        'service account ไม่มีสิทธิ์ — ตรวจว่า (1) แชร์โฟลเดอร์ GOOGLE_DRIVE_FOLDER_ID ให้ ' +
+        '<GOOGLE_SERVICE_ACCOUNT_EMAIL> เป็น Editor แล้ว และ (2) Drive API เปิดอยู่ใน GCP project เดียวกับ SA',
+    };
+  }
+  if (code === 404 || status === 404) {
+    return {
+      reason: 'AUTH_DENIED',
+      detail:
+        'หาโฟลเดอร์ไม่เจอ — มักเกิดจาก service account ยังไม่ได้รับสิทธิ์โฟลเดอร์ ' +
+        'GOOGLE_DRIVE_FOLDER_ID (Drive จะตอบ 404 แทน 403 เพื่อไม่เปิดเผยตัวตนไฟล์)',
     };
   }
   return { reason: 'UNKNOWN', detail: msg || undefined };
@@ -184,7 +232,7 @@ export async function uploadImageToDrive(args: {
     fileId = created.data.id ?? undefined;
     createdName = created.data.name ?? undefined;
   } catch (error) {
-    console.error('Google Drive Error (files.create):', error);
+    logDriveError('files.create', error);
     return { ok: false, ...classifyDriveError(error) };
   }
   if (!fileId) {
@@ -201,11 +249,11 @@ export async function uploadImageToDrive(args: {
       supportsAllDrives: true,
     });
   } catch (permErr) {
-    console.error('Google Drive: permission grant failed — rolling back upload', permErr);
+    logDriveError('permissions.create (rolling back upload)', permErr);
     try {
       await drive.files.delete({ fileId, supportsAllDrives: true });
     } catch (delErr) {
-      console.error('Google Drive: rollback delete also failed', delErr);
+      logDriveError('files.delete (rollback)', delErr);
     }
     const classified = classifyDriveError(permErr);
     return {
@@ -232,7 +280,7 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
     await drive.files.delete({ fileId, supportsAllDrives: true });
     return true;
   } catch (error) {
-    console.error('Google Drive Error (deleteDriveFile):', error);
+    logDriveError('deleteDriveFile', error);
     return false;
   }
 }

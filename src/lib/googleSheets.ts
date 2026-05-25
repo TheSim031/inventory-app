@@ -1,16 +1,35 @@
 import { google, type sheets_v4 } from 'googleapis';
 
-// Shared scopes: spreadsheets (read/write Sheets) + drive.file (manage only
-// files this app creates — required for inspection image uploads).
+// Shared scopes used by both the Sheets and Drive clients.
+//
+// IMPORTANT: we use the *full* `drive` scope, not `drive.file`.
+//
+// - `drive.file` is sandboxed to files the OAuth token itself created.
+//   It CANNOT see (let alone list/upload into) a folder that was pre-
+//   shared with the service account from a human's Drive UI — which is
+//   exactly the pattern this app relies on for GOOGLE_DRIVE_FOLDER_ID.
+//   Using `drive.file` was the cause of the 401/403
+//   "service account ไม่มีสิทธิ์เข้า Drive" failures on image uploads.
+// - `drive` only widens what the SA *could* reach if granted; by default
+//   a service account has no Drive access at all, so the effective
+//   surface is still limited to folders/spreadsheets explicitly shared
+//   with the SA email.
 const GOOGLE_AUTH_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive',
 ];
 
 export function getGoogleAuth(): InstanceType<typeof google.auth.GoogleAuth> | null {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
   const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-  if (!clientEmail || !privateKey) return null;
+  if (!clientEmail || !privateKey) {
+    console.error(
+      'getGoogleAuth: missing env — ' +
+        `GOOGLE_SERVICE_ACCOUNT_EMAIL=${clientEmail ? 'set' : 'EMPTY'}, ` +
+        `GOOGLE_PRIVATE_KEY=${privateKey ? 'set' : 'EMPTY'}`,
+    );
+    return null;
+  }
   return new google.auth.GoogleAuth({
     credentials: { client_email: clientEmail, private_key: privateKey },
     scopes: GOOGLE_AUTH_SCOPES,

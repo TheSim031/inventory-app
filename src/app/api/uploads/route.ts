@@ -47,7 +47,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await uploadImageToDrive({ base64, mimeType, filename });
+  let result;
+  try {
+    result = await uploadImageToDrive({ base64, mimeType, filename });
+  } catch (err) {
+    console.error('POST /api/uploads: uploadImageToDrive threw:', err);
+    return NextResponse.json(
+      {
+        error:
+          'อัปโหลด Drive ล้มเหลวแบบไม่คาดคิด — ดู Vercel logs (POST /api/uploads)',
+        reason: 'UNKNOWN',
+      },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     const REASON_LABEL: Record<typeof result.reason, string> = {
       NOT_CONFIGURED: 'Google Drive ยังไม่ได้ตั้งค่าใน server',
