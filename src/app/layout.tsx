@@ -36,7 +36,12 @@ export default function RootLayout({
       <body>
         <header className="company-header">
           <div className="company-header-inner">
-            <div className="company-logo" aria-label="Company logo" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpg"
+              alt="Explorar — Extreme Performance"
+              className="company-logo"
+            />
             <h1 className="company-name">
               บริษัท ไพโอเนียร์ เอ็นจิเนียริ่ง อินเตอร์เนชั่นแนล จำกัด
             </h1>
