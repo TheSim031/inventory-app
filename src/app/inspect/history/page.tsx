@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { MonthlyCleanupBanner } from '@/components/MonthlyCleanupBanner';
 import { ToastContainer, useToast } from '@/components/Toast';
+import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './history.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -95,10 +96,20 @@ export default function InspectHistoryPage() {
       if (!res.ok) {
         addToast(responseData.error || 'ลบไม่สำเร็จ', 'error');
       } else {
-        addToast(
-          `✅ ลบประวัติตรวจสอบเรียบร้อย ${responseData.deleted ?? 0} รายการ`,
-          'success',
-        );
+        const deleted = responseData.deleted ?? 0;
+        const driveFailed = responseData.driveFailed ?? 0;
+        const driveDeleted = responseData.driveDeleted ?? 0;
+        if (driveFailed > 0) {
+          addToast(
+            `ลบประวัติแล้ว ${deleted} รายการ แต่ลบไฟล์ Drive ไม่ครบ: สำเร็จ ${driveDeleted}, ไม่สำเร็จ ${driveFailed} — อาจมีไฟล์ค้างใน Drive`,
+            'error',
+          );
+        } else {
+          addToast(
+            `✅ ลบประวัติตรวจสอบเรียบร้อย ${deleted} รายการ และลบไฟล์ Drive แล้ว ${driveDeleted} ไฟล์`,
+            'success',
+          );
+        }
         setSelected(new Set());
         mutate();
       }
@@ -199,7 +210,7 @@ export default function InspectHistoryPage() {
                         <span className={styles.poRef}>{row.poRef}</span>
                         <span className={styles.rowDate}>
                           {row.inspectedAt
-                            ? new Date(row.inspectedAt).toLocaleString('th-TH')
+                            ? formatThaiDateTime(row.inspectedAt)
                             : ''}
                         </span>
                       </div>
@@ -310,7 +321,7 @@ function Detail({
                 <th>วันที่รับเข้า</th>
                 <td>
                   {inspection.receivedAt
-                    ? new Date(inspection.receivedAt).toLocaleString('th-TH')
+                    ? formatThaiDateTime(inspection.receivedAt)
                     : '-'}
                 </td>
               </tr>
@@ -322,7 +333,7 @@ function Detail({
                 <th>วันที่ตรวจสอบ</th>
                 <td>
                   {inspection.inspectedAt
-                    ? new Date(inspection.inspectedAt).toLocaleString('th-TH')
+                    ? formatThaiDateTime(inspection.inspectedAt)
                     : '-'}
                 </td>
               </tr>

@@ -1,5 +1,6 @@
 import { readHistorySheet } from '@/lib/googleSheets';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+import { requireRoles } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -36,7 +37,10 @@ function normalizeStatus(raw: string): RequisitionStatus {
  * Rows are stored flat in the history sheet (one row per item); we re-group
  * them back into a requisition shape for the warehouse approval UI.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = requireRoles(request, ['WAREHOUSE']);
+  if (denied) return denied;
+
   try {
     const rows = await readHistorySheet();
     if (!rows) return NextResponse.json([]);

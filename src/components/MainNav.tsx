@@ -9,9 +9,9 @@ import {
   type MenuItem,
 } from '@/lib/menu';
 import { ROLE_LABELS, type UserRole } from '@/lib/userRole';
+import { AUTH_EVENT_KEY, broadcastAuthChanged, fetchJson } from '@/lib/authClient';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((r) => r.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type MeResponse = {
   user: { userId: string; displayName: string; pictureUrl?: string } | null;
@@ -47,6 +47,17 @@ export function MainNav() {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
+  useEffect(() => {
+    const onAuthEvent = (e: StorageEvent) => {
+      if (e.key !== AUTH_EVENT_KEY) return;
+      mutate(undefined, { revalidate: true });
+      router.push('/');
+      router.refresh();
+    };
+    window.addEventListener('storage', onAuthEvent);
+    return () => window.removeEventListener('storage', onAuthEvent);
+  }, [mutate, router]);
+
   if (HIDDEN_ON.includes(pathname)) return null;
   if (!me?.isAuthenticated) return null;
 
@@ -66,6 +77,7 @@ export function MainNav() {
       fetch('/api/auth/creator', { method: 'DELETE' }),
       fetch('/api/auth/role', { method: 'DELETE' }),
     ]);
+    broadcastAuthChanged('logout');
     mutate();
     router.push('/');
     router.refresh();

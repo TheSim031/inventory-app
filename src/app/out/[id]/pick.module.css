@@ -529,7 +529,10 @@
   font-weight: 700;
   margin: 0.15rem 0;
   line-height: 1.2;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  max-height: 3.7em;
+  overflow: hidden;
 }
 
 .coverCellQty {
@@ -670,6 +673,11 @@
 }
 
 @media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
   .container {
     padding: 0;
     max-width: none;

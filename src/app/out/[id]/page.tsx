@@ -4,12 +4,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { ToastContainer, useToast } from '@/components/Toast';
+import {
+  broadcastAuthChanged,
+  fetchJson,
+  isAuthStatus,
+  type ApiError,
+} from '@/lib/authClient';
+import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './pick.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((res) => res.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type RequisitionItem = { code: string; name: string; quantity: number };
 type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
@@ -39,12 +45,12 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
   const router = useRouter();
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
-  const { data: requisitions, mutate: mutateReqs } = useSWR<Requisition[]>(
+  const { data: requisitions, error: requisitionsError, mutate: mutateReqs } = useSWR<Requisition[]>(
     '/api/requisitions',
     fetcher,
     { refreshInterval: 0 },
   );
-  const { data: itemsList } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 0 });
+  const { data: itemsList, error: itemsError } = useSWR<Item[]>('/api/items', fetcher, { refreshInterval: 0 });
 
   const requisition = useMemo(
     () => requisitions?.find((r) => r.id === id),
@@ -120,6 +126,7 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
         mutateReqs();
         setTimeout(() => router.push('/out'), 800);
       } else {
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
         addToast(data.error || 'ดำเนินการไม่สำเร็จ', 'error');
         setSubmitting(false);
       }
@@ -150,6 +157,7 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
         setShowRejectModal(false);
         setTimeout(() => router.push('/out'), 800);
       } else {
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
         addToast(data.error || 'ดำเนินการไม่สำเร็จ', 'error');
         setSubmitting(false);
       }
@@ -158,6 +166,18 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
       setSubmitting(false);
     }
   };
+
+  const authError = (requisitionsError || itemsError) as ApiError | undefined;
+  if (isAuthStatus(authError?.status)) {
+    return (
+      <div className={styles.container}>
+        <ToastContainer toasts={toasts} remove={removeToast} />
+        <div className={styles.errorState}>
+          Session หมดอายุหรือสิทธิ์เปลี่ยนไป กรุณาเข้าสู่ระบบใหม่
+        </div>
+      </div>
+    );
+  }
 
   if (!requisitions) {
     return (
@@ -193,7 +213,7 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
-  const dateText = requisition.date ? new Date(requisition.date).toLocaleString('th-TH') : '-';
+  const dateText = formatThaiDateTime(requisition.date);
 
   return (
     <div className={styles.container}>
@@ -416,7 +436,12 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
                     </div>
                     <div className={styles.coverCellItem}>
                       <div className={styles.coverCellCode}>{it.code}</div>
-                      <div className={styles.coverCellItemName}>{it.name}</div>
+                      <div
+                        className={styles.coverCellItemName}
+                        style={{ fontSize: coverItemNameFontSize(it.name) }}
+                      >
+                        {it.name}
+                      </div>
                       <div className={styles.coverCellQty}>× {it.quantity}</div>
                     </div>
                   </div>
@@ -488,4 +513,12 @@ function chunk<T>(arr: T[], size: number): T[][] {
     out.push(arr.slice(i, i + size));
   }
   return out;
+}
+
+function coverItemNameFontSize(name: string): string {
+  const len = Array.from(name.trim()).length;
+  if (len > 54) return '0.72rem';
+  if (len > 42) return '0.82rem';
+  if (len > 30) return '0.92rem';
+  return '1.05rem';
 }

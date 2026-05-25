@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ROLE_LABELS, type UserRole } from '@/lib/userRole';
+import { broadcastAuthChanged } from '@/lib/authClient';
 
 /**
  * Stub UI for role homes that haven't been built out yet. Phase 5 just
@@ -23,6 +24,7 @@ export function RolePlaceholder({ role }: { role: UserRole }) {
       fetch('/api/auth/logout', { method: 'POST' }),
       fetch('/api/auth/role', { method: 'DELETE' }),
     ]);
+    broadcastAuthChanged('logout');
     router.push('/');
     router.refresh();
   };

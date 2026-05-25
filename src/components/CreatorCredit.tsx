@@ -2,9 +2,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
+import { broadcastAuthChanged, fetchJson } from '@/lib/authClient';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((r) => r.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type MeResponse = {
   isCreator: boolean;
@@ -56,6 +56,7 @@ export function CreatorCredit() {
       // Logged in as creator → clicking the badge logs out of creator mode
       if (!confirm('ออกจากโหมด Creator?')) return;
       await fetch('/api/auth/creator', { method: 'DELETE' });
+      broadcastAuthChanged('logout');
       await mutate();
       router.refresh();
       return;

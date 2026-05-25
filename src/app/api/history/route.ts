@@ -5,9 +5,12 @@ import {
   resolveItemsSheetName,
   resolveHistorySheetName,
   HISTORY_RANGE,
+  compareAndSetStockCells,
+  type StockCellChange,
 } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
+import { requireAuth, requireRoles } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -55,7 +58,10 @@ function normalizeStatus(raw: string): HistoryStatus {
   return 'COMPLETED';
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = requireAuth(request);
+  if (denied) return denied;
+
   try {
     const rows = await readHistorySheet();
     if (!rows) return NextResponse.json([]);
@@ -82,6 +88,25 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  let body: Partial<HistoryPostBody>;
+  try {
+    body = (await request.json()) as Partial<HistoryPostBody>;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const { type, recorder, department, purpose, poRef, items } = body;
+
+  if (type !== 'IN' && type !== 'OUT') {
+    return NextResponse.json({ error: 'type ต้องเป็น IN หรือ OUT' }, { status: 400 });
+  }
+
+  const denied =
+    type === 'IN'
+      ? requireRoles(request, ['WAREHOUSE'])
+      : requireRoles(request, ['WAREHOUSE', 'PURCHASING', 'ASSEMBLY']);
+  if (denied) return denied;
+
   const { sheets, spreadsheetId } = getSheets();
 
   if (!sheets || !spreadsheetId) {
@@ -95,19 +120,6 @@ export async function POST(request: NextRequest) {
       { error: 'ไม่พบ tab ที่ตรงในสเปรดชีต — ตรวจ env GOOGLE_SHEET_ITEMS / GOOGLE_SHEET_HISTORY' },
       { status: 500 },
     );
-  }
-
-  let body: Partial<HistoryPostBody>;
-  try {
-    body = (await request.json()) as Partial<HistoryPostBody>;
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
-
-  const { type, recorder, department, purpose, poRef, items } = body;
-
-  if (type !== 'IN' && type !== 'OUT') {
-    return NextResponse.json({ error: 'type ต้องเป็น IN หรือ OUT' }, { status: 400 });
   }
   if (!recorder || !recorder.trim()) {
     return NextResponse.json({ error: 'กรุณาระบุชื่อผู้บันทึก' }, { status: 400 });
@@ -152,29 +164,47 @@ export async function POST(request: NextRequest) {
         stockIndex.set(r.code, { rowNumber: r.rowNumber, currentStock: r.stock });
       }
 
-      const stockChanges = new Map<string, number>();
+      const stockChanges = new Map<
+        string,
+        StockCellChange & { currentBaseStock: number }
+      >();
       for (const it of items) {
         const entry = stockIndex.get(it.code);
         if (!entry) {
           const message = `ไม่พบรหัสสินค้า "${it.code}" (${it.name}) ในสต็อก`;
-          sendLineNotification('OUT_OF_STOCK', { recorder, message }).catch(console.error);
+          sendLineNotification('OUT_OF_STOCK', { recorder, message })
+            .then((delivery) => {
+              if (!delivery.ok) console.error('LINE delivery failed (OUT_OF_STOCK):', delivery);
+            })
+            .catch(console.error);
           return NextResponse.json({ error: message }, { status: 400 });
         }
-        const baseStock = stockChanges.get(it.code) ?? entry.currentStock;
-        stockChanges.set(it.code, baseStock + it.quantity);
+        const existing = stockChanges.get(it.code);
+        const baseStock = existing?.currentBaseStock ?? entry.currentStock;
+        stockChanges.set(it.code, {
+          code: it.code,
+          name: it.name,
+          rowNumber: entry.rowNumber,
+          expectedStock: entry.currentStock,
+          currentBaseStock: baseStock + it.quantity,
+          nextStock: baseStock + it.quantity,
+        });
       }
 
-      await Promise.all(
-        Array.from(stockChanges.entries()).map(([code, newStock]) => {
-          const rowNumber = stockIndex.get(code)!.rowNumber;
-          return sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${SHEET_ITEMS}!${schema.stockColLetter}${rowNumber}`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [[newStock]] },
-          });
-        }),
-      );
+      const stockResult = await compareAndSetStockCells({
+        sheetName: SHEET_ITEMS,
+        stockColLetter: schema.stockColLetter,
+        changes: Array.from(stockChanges.values()).map((change) => ({
+          code: change.code,
+          name: change.name,
+          rowNumber: change.rowNumber,
+          expectedStock: change.expectedStock,
+          nextStock: change.nextStock,
+        })),
+      });
+      if (!stockResult.ok) {
+        return NextResponse.json({ error: stockResult.error }, { status: stockResult.status });
+      }
     }
 
     // Read lineUserId from the LINE session cookie (server-trusted) so the
@@ -229,13 +259,21 @@ export async function POST(request: NextRequest) {
           code: it.code,
         })),
         recipientLineUserId: lineUserId || undefined,
-      }).catch(console.error);
+      })
+        .then((delivery) => {
+          if (!delivery.ok) console.error('LINE delivery failed (OUT_RECORDED):', delivery);
+        })
+        .catch(console.error);
     } else {
       sendLineNotification('IN_RECORDED', {
         recorder: recorder.trim(),
         poRef: (poRef || '').trim(),
         itemsCount: items.length,
-      }).catch(console.error);
+      })
+        .then((delivery) => {
+          if (!delivery.ok) console.error('LINE delivery failed (IN_RECORDED):', delivery);
+        })
+        .catch(console.error);
     }
 
     return NextResponse.json(

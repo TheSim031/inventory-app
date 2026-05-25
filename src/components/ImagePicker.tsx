@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { broadcastAuthChanged, isAuthStatus } from '@/lib/authClient';
 
 export type UploadedImage = {
   fileId: string;
@@ -19,6 +20,27 @@ export type LocalImage = {
 };
 
 const ACCEPT_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png']);
+const MAX_UPLOAD_FILES_PER_BATCH = 30;
+const MAX_UPLOAD_RAW_BYTES_PER_BATCH = 180 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 45_000;
+
+function dataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  const payload = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  return Math.floor((payload.length * 3) / 4);
+}
+
+function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    window.clearTimeout(timeout),
+  );
+}
 
 /**
  * Resize/compress a raw image File into a base64 JPEG/PNG data URL no larger
@@ -29,8 +51,7 @@ const ACCEPT_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png']);
 async function compressImage(
   file: File,
 ): Promise<{ base64: string; mimeType: string }> {
-  const isPng = file.type === 'image/png';
-  const maxSide = 1500;
+  const maxSide = 1280;
   // Hard cap on raw pixel count so a malicious / mistaken 40k×40k image
   // doesn't OOM the tab inside drawImage().
   const MAX_PIXELS = 80_000_000; // ~80MP, plenty for any phone/DSLR
@@ -58,7 +79,7 @@ async function compressImage(
   const w = Math.round(img.width * scale);
   const h = Math.round(img.height * scale);
 
-  if (scale === 1 && !isPng && file.size < 1_500_000) {
+  if (scale === 1 && file.type !== 'image/png' && file.size < 1_200_000) {
     return { base64: dataUrl, mimeType: 'image/jpeg' };
   }
 
@@ -68,11 +89,17 @@ async function compressImage(
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return { base64: dataUrl, mimeType: file.type || 'image/jpeg' };
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
 
-    const outMime = isPng ? 'image/png' : 'image/jpeg';
-    const quality = isPng ? undefined : 0.85;
-    const out = canvas.toDataURL(outMime, quality);
+    const outMime = 'image/jpeg';
+    const qualities = [0.82, 0.74, 0.66, 0.58];
+    let out = canvas.toDataURL(outMime, qualities[0]);
+    for (const quality of qualities.slice(1)) {
+      if (dataUrlBytes(out) <= 1_500_000) break;
+      out = canvas.toDataURL(outMime, quality);
+    }
     return { base64: out, mimeType: outMime };
   } catch (err) {
     throw new Error(
@@ -101,19 +128,47 @@ export async function uploadLocalImages(
 ): Promise<{ uploaded: UploadedImage[]; failures: UploadProgress['failures'] }> {
   const uploaded: UploadedImage[] = [];
   const failures: UploadProgress['failures'] = [];
+  const rawBytes = local.reduce((sum, img) => sum + img.file.size, 0);
+  if (local.length > MAX_UPLOAD_FILES_PER_BATCH) {
+    return {
+      uploaded,
+      failures: [
+        {
+          file: 'ทั้งหมด',
+          error: `แนบได้ครั้งละไม่เกิน ${MAX_UPLOAD_FILES_PER_BATCH} รูป — ตอนนี้เลือก ${local.length} รูป`,
+        },
+      ],
+    };
+  }
+  if (rawBytes > MAX_UPLOAD_RAW_BYTES_PER_BATCH) {
+    return {
+      uploaded,
+      failures: [
+        {
+          file: 'ทั้งหมด',
+          error: 'ขนาดรูปก่อนบีบอัดรวมกันเกิน 180MB — กรุณาลดจำนวนรูปแล้วลองใหม่',
+        },
+      ],
+    };
+  }
   let done = 0;
   for (const l of local) {
     try {
       const { base64, mimeType } = await compressImage(l.file);
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, mimeType, filename: l.file.name }),
-      });
+      const res = await fetchWithTimeout(
+        '/api/uploads',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64, mimeType, filename: l.file.name }),
+        },
+        UPLOAD_TIMEOUT_MS,
+      );
       const data = (await res.json().catch(() => ({}))) as
         | UploadedImage
         | { error?: string };
       if (!res.ok || !('fileId' in data)) {
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
         failures.push({
           file: l.file.name,
           error: ('error' in data && data.error) || `อัปโหลดล้มเหลว (${res.status})`,
@@ -124,7 +179,12 @@ export async function uploadLocalImages(
     } catch (err) {
       failures.push({
         file: l.file.name,
-        error: err instanceof Error ? err.message : 'อัปโหลดล้มเหลว',
+        error:
+          err instanceof DOMException && err.name === 'AbortError'
+            ? 'อัปโหลดช้าเกิน 45 วินาที — ตรวจเน็ตแล้วลองใหม่'
+            : err instanceof Error
+            ? err.message
+            : 'อัปโหลดล้มเหลว',
       });
     }
     done += 1;

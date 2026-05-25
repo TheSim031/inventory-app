@@ -5,9 +5,12 @@ import {
   resolveItemsSheetName,
   resolveHistorySheetName,
   HISTORY_STATUS_COL,
+  compareAndSetStockCells,
+  type StockCellChange,
 } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
+import { requireRoles } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -38,6 +41,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = requireRoles(request, ['WAREHOUSE']);
+  if (denied) return denied;
+
   const { id } = await params;
   const { sheets, spreadsheetId } = getSheets();
 
@@ -125,7 +131,10 @@ export async function PATCH(
       const outOfStockItems: Array<{ name: string; quantity: number }> = [];
 
       // Validate stock for PICKED items aggregate before mutating anything.
-      const stockChanges = new Map<string, number>();
+      const stockChanges = new Map<
+        string,
+        StockCellChange & { currentBaseStock: number }
+      >();
       for (let i = 0; i < matched.length; i++) {
         const m = matched[i];
         if (itemStatuses[i] === 'OUT_OF_STOCK') {
@@ -139,7 +148,8 @@ export async function PATCH(
             { status: 400 },
           );
         }
-        const baseStock = stockChanges.get(m.code) ?? entry.currentStock;
+        const existing = stockChanges.get(m.code);
+        const baseStock = existing?.currentBaseStock ?? entry.currentStock;
         const newStock = baseStock - m.quantity;
         if (newStock < 0) {
           return NextResponse.json(
@@ -147,22 +157,34 @@ export async function PATCH(
             { status: 400 },
           );
         }
-        stockChanges.set(m.code, newStock);
+        stockChanges.set(m.code, {
+          code: m.code,
+          name: m.name,
+          rowNumber: entry.rowNumber,
+          expectedStock: entry.currentStock,
+          currentBaseStock: newStock,
+          nextStock: newStock,
+        });
         pickedItems.push({ name: m.name, quantity: m.quantity });
       }
 
-      // Deduct stock for PICKED items.
-      await Promise.all(
-        Array.from(stockChanges.entries()).map(([code, newStock]) => {
-          const rowNumber = stockIndex.get(code)!.rowNumber;
-          return sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${SHEET_ITEMS}!${schema.stockColLetter}${rowNumber}`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [[newStock]] },
-          });
-        }),
-      );
+      // Deduct stock only if each stock cell still has the value we validated.
+      // This prevents concurrent requisitions from both overwriting the same
+      // old stock value and over-deducting.
+      const stockResult = await compareAndSetStockCells({
+        sheetName: SHEET_ITEMS,
+        stockColLetter: schema.stockColLetter,
+        changes: Array.from(stockChanges.values()).map((change) => ({
+          code: change.code,
+          name: change.name,
+          rowNumber: change.rowNumber,
+          expectedStock: change.expectedStock,
+          nextStock: change.nextStock,
+        })),
+      });
+      if (!stockResult.ok) {
+        return NextResponse.json({ error: stockResult.error }, { status: stockResult.status });
+      }
 
       // Mark each history row with its individual status.
       await Promise.all(
@@ -190,7 +212,11 @@ export async function PATCH(
         pickedItems,
         outOfStockItems,
         recipientLineUserId: requesterLineUserId,
-      }).catch(console.error);
+      })
+        .then((delivery) => {
+          if (!delivery.ok) console.error('LINE delivery failed (PICK_COMPLETE):', delivery);
+        })
+        .catch(console.error);
 
       return NextResponse.json({
         success: true,
@@ -237,7 +263,11 @@ export async function PATCH(
       reason,
       items: matched.map((m) => ({ name: m.name, quantity: m.quantity })),
       recipientLineUserId: requesterLineUserIdForReject,
-    }).catch(console.error);
+    })
+      .then((delivery) => {
+        if (!delivery.ok) console.error('LINE delivery failed (REQUISITION_REJECTED):', delivery);
+      })
+      .catch(console.error);
 
     return NextResponse.json({ success: true, action, itemsCount: matched.length });
   } catch (err) {

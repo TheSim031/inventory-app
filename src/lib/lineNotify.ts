@@ -80,14 +80,65 @@ type LineMessage =
       previewImageUrl: string;
     };
 
+export type LineDeliveryResult = {
+  ok: boolean;
+  attempted: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+};
+
+function emptyDeliveryResult(): LineDeliveryResult {
+  return { ok: true, attempted: 0, sent: 0, failed: 0, skipped: 0, errors: [] };
+}
+
+function combineDeliveryResults(results: LineDeliveryResult[]): LineDeliveryResult {
+  const combined = emptyDeliveryResult();
+  for (const result of results) {
+    combined.attempted += result.attempted;
+    combined.sent += result.sent;
+    combined.failed += result.failed;
+    combined.skipped += result.skipped;
+    combined.errors.push(...result.errors);
+  }
+  combined.ok = combined.failed === 0 && combined.sent > 0;
+  return combined;
+}
+
+function extractDriveFileId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const queryId = parsed.searchParams.get('id');
+    if (queryId) return queryId;
+
+    const filePathMatch = parsed.pathname.match(/\/file\/d\/([^/]+)/);
+    if (filePathMatch) return decodeURIComponent(filePathMatch[1]);
+
+    const lh3PathMatch = parsed.pathname.match(/^\/d\/([^/]+)/);
+    if (parsed.hostname === 'lh3.googleusercontent.com' && lh3PathMatch) {
+      return decodeURIComponent(lh3PathMatch[1]);
+    }
+  } catch {
+    const queryMatch = url.match(/[?&]id=([^&]+)/);
+    if (queryMatch) return decodeURIComponent(queryMatch[1]);
+    const filePathMatch = url.match(/\/file\/d\/([^/]+)/);
+    if (filePathMatch) return decodeURIComponent(filePathMatch[1]);
+  }
+  return null;
+}
+
 /**
- * Drive `uc?id=` URLs sometimes redirect to HTML on first hit, which LINE
- * rejects. The `lh3.googleusercontent.com/d/<id>` form serves the raw image
- * bytes directly and is what we want for LINE image messages.
+ * Drive preview/share URLs can redirect to HTML, which LINE rejects. Convert
+ * known Drive file URL shapes to a stable raw-image endpoint and log unknown
+ * Google Drive shapes so notification image failures don't stay silent.
  */
 function toLineImageUrl(url: string): string {
-  const match = url.match(/[?&]id=([^&]+)/);
-  if (match) return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  const fileId = extractDriveFileId(url);
+  if (fileId) return `https://lh3.googleusercontent.com/d/${fileId}`;
+  if (url.includes('drive.google.com') || url.includes('googleusercontent.com')) {
+    console.warn('[LINE] Could not extract Drive file id from image URL:', url);
+  }
   return url;
 }
 
@@ -97,83 +148,122 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-async function callLine(endpoint: string, body: unknown): Promise<boolean> {
+async function callLine(endpoint: string, body: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
     console.log('[LINE Stub] missing token, would call', endpoint);
-    return false;
+    return { ok: false, error: 'LINE_CHANNEL_ACCESS_TOKEN missing' };
   }
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      console.error('LINE error', res.status, await res.text());
-      return false;
+  let lastError = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return { ok: true };
+
+      const text = await res.text();
+      lastError = `LINE ${res.status}: ${text}`;
+      console.error('LINE error', { endpoint, attempt, status: res.status, body: text });
+      // Token/config errors are not transient; fail fast so logs are clear.
+      if (res.status === 401 || res.status === 403 || res.status === 400) break;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error('LINE fetch error', { endpoint, attempt, error: lastError });
     }
-    return true;
-  } catch (err) {
-    console.error('LINE fetch error', err);
-    return false;
+    if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 600));
   }
+  return { ok: false, error: lastError || 'LINE request failed' };
 }
 
 /** Push a list of messages to a single LINE userId. */
 async function pushToUser(
   userId: string,
   messages: LineMessage[],
-): Promise<void> {
-  if (!userId || messages.length === 0) return;
+): Promise<LineDeliveryResult> {
+  const result = emptyDeliveryResult();
+  if (!userId || messages.length === 0) {
+    result.skipped += 1;
+    result.ok = false;
+    if (!userId) result.errors.push('missing LINE userId');
+    return result;
+  }
   // LINE accepts up to 5 messages per push call.
   for (const slice of chunk(messages, 5)) {
-    await callLine('https://api.line.me/v2/bot/message/push', {
+    result.attempted += 1;
+    const delivery = await callLine('https://api.line.me/v2/bot/message/push', {
       to: userId,
       messages: slice,
     });
+    if (delivery.ok) result.sent += 1;
+    else {
+      result.failed += 1;
+      result.errors.push(delivery.error);
+    }
   }
+  result.ok = result.failed === 0 && result.sent > 0;
+  return result;
 }
 
 /** Multicast a list of messages to up to 500 userIds (LINE limit). */
 async function multicast(
   userIds: string[],
   messages: LineMessage[],
-): Promise<void> {
-  if (userIds.length === 0 || messages.length === 0) return;
+): Promise<LineDeliveryResult> {
+  const result = emptyDeliveryResult();
+  if (userIds.length === 0 || messages.length === 0) {
+    result.skipped += 1;
+    result.ok = false;
+    if (userIds.length === 0) result.errors.push('no LINE recipients');
+    return result;
+  }
   // LINE multicast: 500 ids per call, 5 messages per call.
   for (const idSlice of chunk(userIds, 500)) {
     for (const msgSlice of chunk(messages, 5)) {
-      await callLine('https://api.line.me/v2/bot/message/multicast', {
+      result.attempted += 1;
+      const delivery = await callLine('https://api.line.me/v2/bot/message/multicast', {
         to: idSlice,
         messages: msgSlice,
       });
+      if (delivery.ok) result.sent += 1;
+      else {
+        result.failed += 1;
+        result.errors.push(delivery.error);
+      }
     }
   }
+  result.ok = result.failed === 0 && result.sent > 0;
+  return result;
 }
 
-async function resolveRoleRecipients(roles: UserRole[]): Promise<string[]> {
+async function resolveRoleRecipients(
+  roles: UserRole[],
+): Promise<{ ids: string[]; missingLineUserId: number }> {
   const users = await readUsersSheet();
-  if (!users) return [];
+  if (!users) return { ids: [], missingLineUserId: 0 };
   const wanted = new Set(roles);
   const ids = new Set<string>();
+  let missingLineUserId = 0;
   for (const u of users) {
-    if (!u.lineUserId) continue;
-    if (isUserRole(u.role) && wanted.has(u.role)) ids.add(u.lineUserId);
+    if (!isUserRole(u.role) || !wanted.has(u.role)) continue;
+    if (!u.lineUserId) {
+      missingLineUserId += 1;
+      continue;
+    }
+    ids.add(u.lineUserId);
   }
-  return Array.from(ids);
+  return { ids: Array.from(ids), missingLineUserId };
 }
 
 /**
- * Hard ceiling on how many image messages we'll ever attach to a single
- * notification. LINE caps each push/multicast at 5 messages, so 30 images
- * = up to 6 API calls per recipient batch. Keeps the door open for "send
- * all warehouse photos" flows without letting a runaway caller flood the
- * channel.
+ * Keep each notification to one LINE API message batch: 1 text + up to 4
+ * image previews. Full image sets remain available in the web app/Drive.
  */
-const MAX_IMAGES_PER_NOTIFICATION = 30;
+const MAX_IMAGES_PER_NOTIFICATION = 4;
 
 export type RoleNotifyOptions = {
   /** Optional image URLs (Drive). Chunked into LINE's 5-per-call limit. */
@@ -197,13 +287,22 @@ export async function sendLineToRoles(
   roles: UserRole[],
   text: string,
   options: RoleNotifyOptions = {},
-): Promise<void> {
+): Promise<LineDeliveryResult> {
   const recipients = await resolveRoleRecipients(roles);
-  if (recipients.length === 0) {
-    console.log(
-      `[LINE] no recipients found for roles ${roles.join(', ')} — message dropped`,
+  const result = emptyDeliveryResult();
+  result.skipped += recipients.missingLineUserId;
+  if (recipients.missingLineUserId > 0) {
+    console.warn(
+      `[LINE] ${recipients.missingLineUserId} ${roles.join('/')} user(s) have no lineUserId; cannot notify them`,
     );
-    return;
+  }
+  if (recipients.ids.length === 0) {
+    const message =
+      `[LINE] no recipients found for roles ${roles.join(', ')} — message dropped`;
+    console.warn(message);
+    result.ok = false;
+    result.errors.push(message);
+    return result;
   }
   const messages: LineMessage[] = [{ type: 'text', text }];
   if (!options.textOnly && options.images && options.images.length > 0) {
@@ -218,7 +317,12 @@ export async function sendLineToRoles(
       });
     }
   }
-  await multicast(recipients, messages);
+  const delivery = await multicast(recipients.ids, messages);
+  return {
+    ...delivery,
+    skipped: delivery.skipped + result.skipped,
+    errors: [...result.errors, ...delivery.errors],
+  };
 }
 
 /** Push a personal notification (text + optional images) to a userId. */
@@ -226,8 +330,17 @@ export async function sendLineToUser(
   userId: string,
   text: string,
   options: RoleNotifyOptions = {},
-): Promise<void> {
-  if (!userId) return;
+): Promise<LineDeliveryResult> {
+  if (!userId) {
+    return {
+      ok: false,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 1,
+      errors: ['missing LINE userId'],
+    };
+  }
   const messages: LineMessage[] = [{ type: 'text', text }];
   if (!options.textOnly && options.images && options.images.length > 0) {
     const cap = Math.min(options.maxImages ?? 5, MAX_IMAGES_PER_NOTIFICATION);
@@ -240,7 +353,7 @@ export async function sendLineToUser(
       });
     }
   }
-  await pushToUser(userId, messages);
+  return pushToUser(userId, messages);
 }
 
 function formatItemList(items: ItemEntry[]): string {
@@ -260,29 +373,27 @@ function formatItemList(items: ItemEntry[]): string {
 export async function sendLineNotification<T extends NotificationType>(
   type: T,
   data: Extract<NotificationPayload, { type: T }>['data'],
-): Promise<void> {
+): Promise<LineDeliveryResult> {
   switch (type) {
     case 'OUT_RECORDED': {
       const d = data as Extract<NotificationPayload, { type: 'OUT_RECORDED' }>['data'];
       const text = `📤 บันทึกการเบิกออก\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการที่เบิก:\n${formatItemList(d.items)}`;
-      await sendLineToRoles(['WAREHOUSE'], text);
+      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], text)];
       if (d.recipientLineUserId) {
         const personal = `📝 ยืนยันคำขอเบิกของคุณ\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}\n\nรอคลังจัดของให้ครับ 🙏`;
-        await sendLineToUser(d.recipientLineUserId, personal);
+        results.push(await sendLineToUser(d.recipientLineUserId, personal));
       }
-      return;
+      return combineDeliveryResults(results);
     }
     case 'IN_RECORDED': {
       const d = data as Extract<NotificationPayload, { type: 'IN_RECORDED' }>['data'];
       const text = `📥 บันทึกการรับเข้า\nผู้รับ: ${d.recorder}\nPO/PX: ${d.poRef}\nจำนวนรายการ: ${d.itemsCount}`;
-      await sendLineToRoles(['WAREHOUSE'], text);
-      return;
+      return sendLineToRoles(['WAREHOUSE'], text);
     }
     case 'OUT_OF_STOCK': {
       const d = data as Extract<NotificationPayload, { type: 'OUT_OF_STOCK' }>['data'];
       const text = `❌ บันทึกการเบิกไม่สำเร็จ (โดย ${d.recorder})\n${d.message}`;
-      await sendLineToRoles(['WAREHOUSE'], text);
-      return;
+      return sendLineToRoles(['WAREHOUSE'], text);
     }
     case 'PICK_COMPLETE': {
       // Phase 5 spec: notify both the warehouse group AND the requester.
@@ -295,11 +406,11 @@ export async function sendLineNotification<T extends NotificationType>(
         : '';
       const warehouseText = `✅ จัดของใบเบิก ${d.requisitionId} เสร็จเรียบร้อย\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
       const personalText = `📦 พัสดุของคุณจัดเสร็จแล้ว มารับได้ที่ห้องคลังสินค้า\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
-      await sendLineToRoles(['WAREHOUSE'], warehouseText);
+      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], warehouseText)];
       if (d.recipientLineUserId) {
-        await sendLineToUser(d.recipientLineUserId, personalText);
+        results.push(await sendLineToUser(d.recipientLineUserId, personalText));
       }
-      return;
+      return combineDeliveryResults(results);
     }
     case 'REQUISITION_REJECTED': {
       // Phase 5 spec: notify both the warehouse group AND the requester.
@@ -308,11 +419,11 @@ export async function sendLineNotification<T extends NotificationType>(
       const d = data as Extract<NotificationPayload, { type: 'REQUISITION_REJECTED' }>['data'];
       const warehouseText = `❌ ยกเลิกใบเบิก ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ยกเลิก:\n${formatItemList(d.items)}`;
       const personalText = `❌ ใบเบิกของคุณถูกยกเลิก\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
-      await sendLineToRoles(['WAREHOUSE'], warehouseText);
+      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], warehouseText)];
       if (d.recipientLineUserId) {
-        await sendLineToUser(d.recipientLineUserId, personalText);
+        results.push(await sendLineToUser(d.recipientLineUserId, personalText));
       }
-      return;
+      return combineDeliveryResults(results);
     }
   }
 }

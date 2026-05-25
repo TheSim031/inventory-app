@@ -2,8 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const CREATOR_USERNAME = 'admin';
-const CREATOR_PASSWORD = 'admin1234';
+const CREATOR_USERNAME = process.env.CREATOR_USERNAME || 'admin';
+const CREATOR_PASSWORD =
+  process.env.CREATOR_PASSWORD ||
+  (process.env.NODE_ENV === 'production' ? '' : 'admin1234');
 const COOKIE_NAME = 'creator_session';
 
 /**
@@ -25,6 +27,13 @@ export async function POST(request: NextRequest) {
 
   const username = body.username ?? CREATOR_USERNAME;
   const password = body.password ?? '';
+
+  if (!CREATOR_PASSWORD) {
+    return NextResponse.json(
+      { error: 'ยังไม่ได้ตั้งค่า CREATOR_PASSWORD บน production' },
+      { status: 503 },
+    );
+  }
 
   if (username !== CREATOR_USERNAME || password !== CREATOR_PASSWORD) {
     return NextResponse.json(

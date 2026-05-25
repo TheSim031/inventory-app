@@ -2,12 +2,18 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
+import {
+  broadcastAuthChanged,
+  fetchJson,
+  isAuthStatus,
+  readErrorMessage,
+  type ApiError,
+} from '@/lib/authClient';
 import styles from './request.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((res) => res.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 const DEPARTMENTS = [
   'แผนกประกอบ Basevalue',
@@ -38,43 +44,86 @@ type MeResponse = {
 };
 
 const FRIEND_ACK_KEY = 'pioneer-oa-friend-added';
+const DRAFT_KEY = 'inventory-request-draft-v1';
+
+type RequestForm = {
+  department: string;
+  customDepartment: string;
+  requester_name: string;
+  purpose: string;
+};
+
+const emptyForm: RequestForm = {
+  department: '',
+  customDepartment: '',
+  requester_name: '',
+  purpose: '',
+};
+
+function readRequestDraft(): { cart: Record<string, CartEntry>; form: RequestForm } {
+  if (typeof window === 'undefined') return { cart: {}, form: emptyForm };
+  const raw = window.localStorage.getItem(DRAFT_KEY);
+  if (!raw) return { cart: {}, form: emptyForm };
+  try {
+    const draft = JSON.parse(raw) as {
+      cart?: Record<string, CartEntry>;
+      form?: RequestForm;
+    };
+    return {
+      cart: draft.cart && typeof draft.cart === 'object' ? draft.cart : {},
+      form: draft.form && typeof draft.form === 'object' ? draft.form : emptyForm,
+    };
+  } catch {
+    window.localStorage.removeItem(DRAFT_KEY);
+    return { cart: {}, form: emptyForm };
+  }
+}
 
 export default function RequestPage() {
-  const { data: meData, mutate: mutateMe } = useSWR<MeResponse>('/api/auth/me', fetcher);
-  const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, {
-    refreshInterval: 5000,
-  });
-
-  const [cart, setCart] = useState<Record<string, CartEntry>>({});
-  const [form, setForm] = useState({
-    department: '',
-    customDepartment: '',
-    requester_name: '',
-    purpose: '',
-  });
+  const draft = useMemo(() => readRequestDraft(), []);
+  const [cart, setCart] = useState<Record<string, CartEntry>>(() => draft.cart);
+  const [form, setForm] = useState<RequestForm>(() => draft.form);
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [friendAcked, setFriendAcked] = useState(false);
+  const [friendAcked, setFriendAcked] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.localStorage.getItem(FRIEND_ACK_KEY) === '1',
+  );
   const searchBoxRef = useRef<HTMLDivElement>(null);
+  const draftReadyRef = useRef(false);
 
-  // Read the "already added OA as friend" flag from localStorage once on mount.
+  const { data: meData, mutate: mutateMe } = useSWR<MeResponse>('/api/auth/me', fetcher, {
+    onSuccess: (data) => {
+      const name = data.user?.displayName;
+      if (!name) return;
+      setForm((prev) => (prev.requester_name ? prev : { ...prev, requester_name: name }));
+    },
+  });
+  const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, {
+    refreshInterval: 5000,
+  });
+
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setFriendAcked(window.localStorage.getItem(FRIEND_ACK_KEY) === '1');
-    }
+    draftReadyRef.current = true;
   }, []);
 
-  // Once we know the LINE displayName, prefill the requester name (only if
-  // the user hasn't typed anything yet — don't clobber their edits).
   useEffect(() => {
-    const name = meData?.user?.displayName;
-    if (name && !form.requester_name) {
-      setForm((prev) => ({ ...prev, requester_name: name }));
+    if (!draftReadyRef.current || typeof window === 'undefined') return;
+    const hasDraft =
+      Object.keys(cart).length > 0 ||
+      form.department ||
+      form.customDepartment ||
+      form.requester_name ||
+      form.purpose;
+    if (!hasDraft) {
+      window.localStorage.removeItem(DRAFT_KEY);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meData?.user?.displayName]);
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ cart, form }));
+  }, [cart, form]);
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -183,13 +232,25 @@ export default function RequestPage() {
           requester_name: meData?.user?.displayName || '',
           purpose: '',
         });
+        if (typeof window !== 'undefined') window.localStorage.removeItem(DRAFT_KEY);
       } else {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || 'เกิดข้อผิดพลาดในการส่งคำขอเบิก');
+        const message = await readErrorMessage(res, 'เกิดข้อผิดพลาดในการส่งคำขอเบิก');
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
+        alert(
+          isAuthStatus(res.status)
+            ? `${message}\n\nระบบเก็บข้อมูลที่กรอกไว้ในเครื่องนี้แล้ว กรุณาเข้าสู่ระบบใหม่`
+            : message,
+        );
       }
     } catch (err) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด');
+      const status = (err as ApiError).status;
+      if (isAuthStatus(status)) broadcastAuthChanged('denied');
+      alert(
+        isAuthStatus(status)
+          ? 'Session หมดอายุหรือสิทธิ์เปลี่ยนไป ระบบเก็บข้อมูลที่กรอกไว้แล้ว กรุณาเข้าสู่ระบบใหม่'
+          : 'เกิดข้อผิดพลาด',
+      );
     }
     setSubmitting(false);
   };
@@ -268,6 +329,13 @@ export default function RequestPage() {
     );
   }
 
+  if (isAuthStatus((error as ApiError | undefined)?.status)) {
+    return (
+      <div className={styles.container}>
+        Session หมดอายุหรือสิทธิ์เปลี่ยนไป ข้อมูลที่กรอกไว้ถูกเก็บเป็น draft แล้ว
+      </div>
+    );
+  }
   if (error) return <div className={styles.container}>Failed to load items</div>;
   if (!items) return <div className={styles.container}>Loading...</div>;
 

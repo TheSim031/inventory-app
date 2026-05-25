@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { ROLE_COOKIE } from '@/lib/userRole';
 
+const STAFF_USERNAME = process.env.STAFF_USERNAME || 'admin';
+const STAFF_PASSWORD =
+  process.env.STAFF_PASSWORD ||
+  (process.env.NODE_ENV === 'production' ? '' : 'admin1234');
+
 /**
  * Staff/admin login (legacy username+password). On success we drop both
  * the admin session cookie and a default user_role=WAREHOUSE so the
@@ -11,8 +16,14 @@ export async function POST(request: Request) {
   try {
     const { username, password } = await request.json();
 
-    // Hardcoded credentials for now, as requested
-    if (username === 'admin' && password === 'admin1234') {
+    if (!STAFF_PASSWORD) {
+      return NextResponse.json(
+        { error: 'ยังไม่ได้ตั้งค่า STAFF_PASSWORD บน production' },
+        { status: 503 },
+      );
+    }
+
+    if (username === STAFF_USERNAME && password === STAFF_PASSWORD) {
       const response = NextResponse.json({ success: true, role: 'WAREHOUSE' });
 
       response.cookies.set({

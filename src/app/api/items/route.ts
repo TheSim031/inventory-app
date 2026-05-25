@@ -1,5 +1,6 @@
 import { readItemsSheet } from '@/lib/googleSheets';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 
 // Force every request to hit Google Sheets fresh — never cache the response
 // on Vercel's Data Cache. Stock changes need to be visible immediately.
@@ -15,7 +16,10 @@ export type Item = {
   status: string;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = requireAuth(request);
+  if (denied) return denied;
+
   try {
     const schema = await readItemsSheet();
     if (!schema) {

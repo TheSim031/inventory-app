@@ -7,12 +7,18 @@ import {
   uploadLocalImages,
   type LocalImage,
 } from '@/components/ImagePicker';
+import {
+  broadcastAuthChanged,
+  fetchJson,
+  isAuthStatus,
+  type ApiError,
+} from '@/lib/authClient';
 import styles from './in.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((res) => res.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
+const DRAFT_KEY = 'inventory-in-draft-v1';
 
 type Item = {
   id: string;
@@ -39,7 +45,29 @@ const newRow = (): Row => ({
   quantity: '',
 });
 
+function readInDraft(): { company: string; poRef: string; rows: Row[] } {
+  if (typeof window === 'undefined') return { company: '', poRef: '', rows: [newRow()] };
+  const raw = window.localStorage.getItem(DRAFT_KEY);
+  if (!raw) return { company: '', poRef: '', rows: [newRow()] };
+  try {
+    const draft = JSON.parse(raw) as {
+      company?: string;
+      poRef?: string;
+      rows?: Row[];
+    };
+    return {
+      company: typeof draft.company === 'string' ? draft.company : '',
+      poRef: typeof draft.poRef === 'string' ? draft.poRef : '',
+      rows: Array.isArray(draft.rows) && draft.rows.length > 0 ? draft.rows : [newRow()],
+    };
+  } catch {
+    window.localStorage.removeItem(DRAFT_KEY);
+    return { company: '', poRef: '', rows: [newRow()] };
+  }
+}
+
 export default function InPage() {
+  const draft = useMemo(() => readInDraft(), []);
   const {
     data: items,
     error: itemsError,
@@ -48,9 +76,9 @@ export default function InPage() {
 
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
-  const [company, setCompany] = useState('');
-  const [poRef, setPoRef] = useState('');
-  const [rows, setRows] = useState<Row[]>([newRow()]);
+  const [company, setCompany] = useState(() => draft.company);
+  const [poRef, setPoRef] = useState(() => draft.poRef);
+  const [rows, setRows] = useState<Row[]>(() => draft.rows);
 
   const [billImages, setBillImages] = useState<LocalImage[]>([]);
   const [poImages, setPoImages] = useState<LocalImage[]>([]);
@@ -61,6 +89,7 @@ export default function InPage() {
   const [showInspectModal, setShowInspectModal] = useState(false);
 
   const rowsContainerRef = useRef<HTMLDivElement>(null);
+  const draftReadyRef = useRef(false);
 
   // Close any open suggestion dropdowns when clicking elsewhere.
   useEffect(() => {
@@ -72,6 +101,37 @@ export default function InPage() {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
+
+  useEffect(() => {
+    const status = (itemsError as ApiError | undefined)?.status;
+    if (!isAuthStatus(status)) return;
+    broadcastAuthChanged('denied');
+    addToast('Session หมดอายุหรือสิทธิ์เปลี่ยนไป ข้อมูลที่กรอกไว้ยังอยู่ในหน้านี้', 'error');
+  }, [itemsError, addToast]);
+
+  useEffect(() => {
+    draftReadyRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!draftReadyRef.current || typeof window === 'undefined') return;
+    const hasDraft =
+      company ||
+      poRef ||
+      rows.some((r) => r.selected || r.search || r.quantity !== '');
+    if (!hasDraft) {
+      window.localStorage.removeItem(DRAFT_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        company,
+        poRef,
+        rows: rows.map((r) => ({ ...r, showSuggestions: false })),
+      }),
+    );
+  }, [company, poRef, rows]);
 
   const updateRow = (uid: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
@@ -153,6 +213,7 @@ export default function InPage() {
       });
       const historyData = await historyRes.json().catch(() => ({}));
       if (!historyRes.ok) {
+        if (isAuthStatus(historyRes.status)) broadcastAuthChanged('denied');
         addToast(historyData.error || 'บันทึกรับเข้าไม่สำเร็จ', 'error');
         setSubmitting(false);
         return;
@@ -205,6 +266,7 @@ export default function InPage() {
         });
         const inspectData = await inspectRes.json().catch(() => ({}));
         if (!inspectRes.ok) {
+          if (isAuthStatus(inspectRes.status)) broadcastAuthChanged('denied');
           addToast(
             `บันทึกสต็อกสำเร็จ แต่ส่งตรวจสอบไม่สำเร็จ: ${inspectData.error || ''}`,
             'error',
@@ -225,9 +287,16 @@ export default function InPage() {
       setBillImages([]);
       setPoImages([]);
       setGoodsImages([]);
+      if (typeof window !== 'undefined') window.localStorage.removeItem(DRAFT_KEY);
       mutateItems();
-    } catch {
-      addToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+    } catch (err) {
+      const status = (err as ApiError).status;
+      if (isAuthStatus(status)) {
+        broadcastAuthChanged('denied');
+        addToast('Session หมดอายุหรือสิทธิ์เปลี่ยนไป ข้อมูลที่กรอกไว้ถูกเก็บเป็น draft แล้ว', 'error');
+      } else {
+        addToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+      }
     }
     setSubmitting(false);
     setUploadProgress(null);

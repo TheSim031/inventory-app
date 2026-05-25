@@ -8,6 +8,7 @@ import {
   type UserRole,
 } from '@/lib/userRole';
 import { getAllMenuIds, ROLE_MENU_IDS } from '@/lib/menu';
+import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './admin-users.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +38,7 @@ export default function AdminUsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const users = data?.users ?? [];
+  const users = useMemo(() => data?.users ?? [], [data?.users]);
 
   const roleCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -198,7 +199,7 @@ export default function AdminUsersPage() {
                     </td>
                     <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                       {u.lastLogin
-                        ? new Date(u.lastLogin).toLocaleString('th-TH')
+                        ? formatThaiDateTime(u.lastLogin)
                         : '-'}
                     </td>
                     <td>

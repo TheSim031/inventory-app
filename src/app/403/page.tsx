@@ -2,6 +2,7 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { broadcastAuthChanged } from '@/lib/authClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ function ForbiddenInner() {
       fetch('/api/auth/creator', { method: 'DELETE' }),
       fetch('/api/auth/role', { method: 'DELETE' }),
     ]);
+    broadcastAuthChanged('logout');
     router.push('/');
     router.refresh();
   };

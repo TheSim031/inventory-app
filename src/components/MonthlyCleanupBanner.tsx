@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useSyncExternalStore } from 'react';
 import useSWR from 'swr';
+import { getBangkokDayOfMonth, getBangkokMonthKey } from '@/lib/dateTime';
 
 const fetcher = (url: string) =>
   fetch(url, { cache: 'no-store' }).then((r) => r.json());
@@ -12,10 +13,6 @@ type MeResponse = {
   role: string | null;
 };
 
-function monthKey(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
 /**
  * Banner that appears on the 1st of every month, reminding warehouse users
  * to clean up the inspection-history sheet. Dismissals are stored in
@@ -24,7 +21,7 @@ function monthKey(date = new Date()) {
 export function MonthlyCleanupBanner({ pendingCount }: { pendingCount?: number }) {
   const { data: me } = useSWR<MeResponse>('/api/auth/me', fetcher);
   // Same key shape on every render path so dismissals persist correctly.
-  const key = `cleanup-banner-dismissed-${monthKey()}`;
+  const key = `cleanup-banner-dismissed-${getBangkokMonthKey()}`;
 
   const subscribe = useCallback((cb: () => void) => {
     if (typeof window === 'undefined') return () => {};
@@ -51,8 +48,7 @@ export function MonthlyCleanupBanner({ pendingCount }: { pendingCount?: number }
   const eligible = me.isCreator || me.role === 'WAREHOUSE';
   if (!eligible) return null;
 
-  const today = new Date();
-  const isFirstOfMonth = today.getDate() === 1;
+  const isFirstOfMonth = getBangkokDayOfMonth() === 1;
   if (!isFirstOfMonth) return null;
   if (dismissed) return null;
   if (typeof pendingCount === 'number' && pendingCount === 0) return null;

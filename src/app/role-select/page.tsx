@@ -3,12 +3,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/userRole';
+import { broadcastAuthChanged, fetchJson } from '@/lib/authClient';
 import styles from './role-select.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((res) => res.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type MeResponse = {
   user: { userId: string; displayName: string; pictureUrl?: string } | null;
@@ -21,11 +21,15 @@ type MeResponse = {
 
 export default function RoleSelectPage() {
   const router = useRouter();
-  const { data: me, isLoading } = useSWR<MeResponse>('/api/auth/me', fetcher);
 
   const [selected, setSelected] = useState<UserRole | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: me, isLoading } = useSWR<MeResponse>('/api/auth/me', fetcher, {
+    onSuccess: (data) => {
+      if (data.role) setSelected((prev) => prev ?? data.role);
+    },
+  });
 
   // Anyone hitting /role-select without a session should bounce back to /
   useEffect(() => {
@@ -33,12 +37,6 @@ export default function RoleSelectPage() {
       router.replace('/');
     }
   }, [me, router]);
-
-  // Pre-select whatever role the cookie currently has, so users get a
-  // visual reminder of their previous choice when revisiting.
-  useEffect(() => {
-    if (me?.role && !selected) setSelected(me.role);
-  }, [me?.role, selected]);
 
   const handleConfirm = async () => {
     if (!selected) return;
@@ -71,6 +69,7 @@ export default function RoleSelectPage() {
       fetch('/api/auth/logout', { method: 'POST' }),
       fetch('/api/auth/role', { method: 'DELETE' }),
     ]);
+    broadcastAuthChanged('logout');
     router.push('/');
     router.refresh();
   };

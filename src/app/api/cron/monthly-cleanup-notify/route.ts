@@ -4,6 +4,7 @@ import { sendLineToRoles } from '@/lib/lineNotify';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const maxDuration = 30;
 
 /**
  * Vercel-cron entry for the monthly cleanup reminder. vercel.json schedules
@@ -53,7 +54,14 @@ export async function GET(request: NextRequest) {
     `👉 เข้าเมนู "ประวัติตรวจสอบ" เพื่อเลือกรายการที่จะลบ`;
 
   try {
-    await sendLineToRoles(['WAREHOUSE'], text);
+    const delivery = await sendLineToRoles(['WAREHOUSE'], text);
+    if (!delivery.ok) {
+      console.error('Cron LINE dispatch failed:', delivery);
+      return NextResponse.json(
+        { notified: false, error: 'line failed', delivery },
+        { status: 502 },
+      );
+    }
   } catch (err) {
     console.error('Cron LINE dispatch failed:', err);
     return NextResponse.json(

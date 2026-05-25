@@ -8,12 +8,18 @@ import {
   type LocalImage,
   type UploadedImage,
 } from '@/components/ImagePicker';
+import {
+  broadcastAuthChanged,
+  fetchJson,
+  isAuthStatus,
+  type ApiError,
+} from '@/lib/authClient';
+import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './inspect.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((r) => r.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type InspectionItem = { code: string; name: string; quantity: number };
 type Images = { fileId: string; url: string; name?: string };
@@ -28,7 +34,7 @@ type Inspection = {
 };
 
 export default function InspectPage() {
-  const { data, mutate, isLoading } = useSWR<Inspection[]>(
+  const { data, error, mutate, isLoading } = useSWR<Inspection[]>(
     '/api/inspections?status=PENDING',
     fetcher,
     { refreshInterval: 10000 },
@@ -74,7 +80,9 @@ export default function InspectPage() {
           <span className={styles.countPill}>{pending.length}</span>
         </h2>
 
-        {isLoading ? (
+        {isAuthStatus((error as ApiError | undefined)?.status) ? (
+          <p className={styles.empty}>Session หมดอายุหรือสิทธิ์เปลี่ยนไป กรุณาเข้าสู่ระบบใหม่</p>
+        ) : isLoading ? (
           <p className={styles.empty}>กำลังโหลด...</p>
         ) : pending.length === 0 ? (
           <p className={styles.empty}>ไม่มีรายการรอตรวจสอบในขณะนี้ 🎉</p>
@@ -92,7 +100,7 @@ export default function InspectPage() {
                     <span className={styles.poRef}>{row.poRef}</span>
                     <span className={styles.rowDate}>
                       {row.receivedAt
-                        ? new Date(row.receivedAt).toLocaleString('th-TH')
+                        ? formatThaiDateTime(row.receivedAt)
                         : ''}
                     </span>
                   </div>
@@ -194,6 +202,7 @@ function InspectDetail({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
         addToast(data.error || 'ยืนยันตรวจสอบไม่สำเร็จ', 'error');
         setSubmitting(false);
         setUploadProgress(null);
@@ -221,7 +230,7 @@ function InspectDetail({
           {' · '}
           รับเข้า:{' '}
           {inspection.receivedAt
-            ? new Date(inspection.receivedAt).toLocaleString('th-TH')
+            ? formatThaiDateTime(inspection.receivedAt)
             : '-'}
         </p>
       </header>

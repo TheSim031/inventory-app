@@ -2,12 +2,13 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
+import { fetchJson, isAuthStatus, type ApiError } from '@/lib/authClient';
+import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './out.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const fetcher = (url: string) =>
-  fetch(url, { cache: 'no-store' }).then((res) => res.json());
+const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type RequisitionItem = { code: string; name: string; quantity: number };
 type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
@@ -23,7 +24,7 @@ type Requisition = {
 };
 
 export default function OutPage() {
-  const { data: requisitions } = useSWR<Requisition[]>('/api/requisitions', fetcher, {
+  const { data: requisitions, error } = useSWR<Requisition[]>('/api/requisitions', fetcher, {
     refreshInterval: 8000,
   });
 
@@ -49,7 +50,9 @@ export default function OutPage() {
           <span className={styles.countPill}>{pending.length}</span>
         </h2>
 
-        {loading ? (
+        {isAuthStatus((error as ApiError | undefined)?.status) ? (
+          <p className={styles.empty}>Session หมดอายุหรือสิทธิ์เปลี่ยนไป กรุณาเข้าสู่ระบบใหม่</p>
+        ) : loading ? (
           <p className={styles.empty}>กำลังโหลด...</p>
         ) : pending.length === 0 ? (
           <p className={styles.empty}>ไม่มีใบเบิกรอจัดในขณะนี้ 🎉</p>
@@ -65,7 +68,7 @@ export default function OutPage() {
                   <div className={styles.rowHeader}>
                     <span className={styles.reqId}>{req.id}</span>
                     <span className={styles.reqDate}>
-                      {req.date ? new Date(req.date).toLocaleString('th-TH') : ''}
+                      {req.date ? formatThaiDateTime(req.date) : ''}
                     </span>
                   </div>
                   <div className={styles.meta}>

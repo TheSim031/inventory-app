@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'บันทึกรายการตรวจสอบไม่สำเร็จ' }, { status: 500 });
   }
 
-  // Notify warehouse (full details + all images) and QC (text only with
+  // Notify warehouse (details + image previews) and QC (text only with
   // explicit "ให้มาตรวจของ" framing per Phase 3 spec).
   const itemsBlock = sanitizedItems
     .map((it) => `• ${it.name} (${it.code}) ×${it.quantity}`)
@@ -145,13 +145,19 @@ export async function POST(request: NextRequest) {
   // Fire-and-forget so notification failures don't block the response.
   (async () => {
     try {
-      await sendLineToRoles(['WAREHOUSE'], `${whText}\n\n🗂 รูปแนบจากคลัง: ${allWhImages.length} รูป`, {
+      const warehouseDelivery = await sendLineToRoles(['WAREHOUSE'], `${whText}\n\n🗂 รูปแนบจากคลัง: ${allWhImages.length} รูป (ส่ง preview สูงสุด 4 รูป)`, {
         images: allWhImages,
-        maxImages: allWhImages.length,
+        maxImages: 4,
       });
-      await sendLineToRoles(['QC'], qcText, {
+      if (!warehouseDelivery.ok) {
+        console.error('Notification dispatch failed (inspections POST warehouse):', warehouseDelivery);
+      }
+      const qcDelivery = await sendLineToRoles(['QC'], qcText, {
         textOnly: true,
       });
+      if (!qcDelivery.ok) {
+        console.error('Notification dispatch failed (inspections POST QC):', qcDelivery);
+      }
     } catch (err) {
       console.error('Notification dispatch error (inspections POST):', err);
     }
@@ -228,10 +234,13 @@ export async function PATCH(request: NextRequest) {
 
   (async () => {
     try {
-      await sendLineToRoles(['EXECUTIVE'], `${text}\n\n🗂 รูปทั้งหมด: ${allImages.length} รูป`, {
+      const delivery = await sendLineToRoles(['EXECUTIVE'], `${text}\n\n🗂 รูปทั้งหมด: ${allImages.length} รูป (ส่ง preview สูงสุด 4 รูป)`, {
         images: allImages,
-        maxImages: allImages.length,
+        maxImages: 4,
       });
+      if (!delivery.ok) {
+        console.error('Notification dispatch failed (inspections PATCH executive):', delivery);
+      }
     } catch (err) {
       console.error('Notification dispatch error (inspections PATCH):', err);
     }

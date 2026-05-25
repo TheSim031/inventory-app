@@ -365,6 +365,34 @@ function colIndexToLetter(idx: number): string {
   return s;
 }
 
+function colLetterToIndex(letter: string): number {
+  let n = 0;
+  for (const ch of letter.toUpperCase()) {
+    const code = ch.charCodeAt(0);
+    if (code < 65 || code > 90) continue;
+    n = n * 26 + (code - 64);
+  }
+  return Math.max(0, n - 1);
+}
+
+async function getSheetIdByTitle(title: string): Promise<number | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties(sheetId,title)',
+    });
+    const found = (meta.data.sheets || []).find(
+      (s) => s.properties?.title === title,
+    );
+    return found?.properties?.sheetId ?? null;
+  } catch (error) {
+    console.error('Google Sheets Error (getSheetIdByTitle):', error);
+    return null;
+  }
+}
+
 function findHeaderIndex(headers: string[], candidates: string[]): number {
   const lowered = headers.map((h) => h.trim().toLowerCase());
   // exact match first
@@ -485,6 +513,122 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
     rows: items,
     stockColLetter: colIndexToLetter(sIdx),
   };
+}
+
+export type StockCellChange = {
+  code: string;
+  name: string;
+  rowNumber: number;
+  expectedStock: number;
+  nextStock: number;
+};
+
+export type StockCompareSetResult =
+  | { ok: true }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      conflictCode?: string;
+      currentStock?: number;
+    };
+
+/**
+ * Optimistic compare-and-set for stock cells. Google Sheets has no native
+ * transaction, so direct values.update can overwrite a concurrent request
+ * that read the same old stock. findReplace scoped to a single stock cell
+ * gives us a server-side "only replace if the cell still equals X" guard.
+ */
+export async function compareAndSetStockCells(args: {
+  sheetName: string;
+  stockColLetter: string;
+  changes: StockCellChange[];
+}): Promise<StockCompareSetResult> {
+  if (args.changes.length === 0) return { ok: true };
+
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) {
+    return { ok: false, status: 503, error: 'Google Sheets API not configured' };
+  }
+
+  const sheetId = await getSheetIdByTitle(args.sheetName);
+  if (sheetId === null) {
+    return { ok: false, status: 500, error: 'ไม่พบ sheet id ของตารางสต็อก' };
+  }
+
+  const stockColIndex = colLetterToIndex(args.stockColLetter);
+  const changes = [...args.changes].sort((a, b) => a.rowNumber - b.rowNumber);
+
+  try {
+    const response = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: changes.map((change) => ({
+          findReplace: {
+            range: {
+              sheetId,
+              startRowIndex: change.rowNumber - 1,
+              endRowIndex: change.rowNumber,
+              startColumnIndex: stockColIndex,
+              endColumnIndex: stockColIndex + 1,
+            },
+            find: String(change.expectedStock),
+            replacement: String(change.nextStock),
+            matchCase: true,
+            matchEntireCell: true,
+          },
+        })),
+      },
+    });
+
+    const changed = response.data.replies?.map(
+      (reply) => reply.findReplace?.occurrencesChanged ?? 0,
+    ) ?? [];
+    const failedIndex = changed.findIndex((count) => count !== 1);
+
+    if (failedIndex === -1) return { ok: true };
+
+    // Best-effort rollback for any earlier cells changed by this batch.
+    const applied = changes.slice(0, failedIndex);
+    if (applied.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: applied.map((change) => ({
+            findReplace: {
+              range: {
+                sheetId,
+                startRowIndex: change.rowNumber - 1,
+                endRowIndex: change.rowNumber,
+                startColumnIndex: stockColIndex,
+                endColumnIndex: stockColIndex + 1,
+              },
+              find: String(change.nextStock),
+              replacement: String(change.expectedStock),
+              matchCase: true,
+              matchEntireCell: true,
+            },
+          })),
+        },
+      });
+    }
+
+    const conflict = changes[failedIndex];
+    const latest = await readItemsSheet();
+    const current = latest?.rows.find((r) => r.code === conflict.code)?.stock;
+    return {
+      ok: false,
+      status: 409,
+      conflictCode: conflict.code,
+      currentStock: current,
+      error:
+        `สต็อก "${conflict.name}" (${conflict.code}) ถูกเปลี่ยนโดยรายการอื่นระหว่างบันทึก ` +
+        `(ตอนเริ่ม ${conflict.expectedStock}, ตอนนี้ ${current ?? 'ไม่ทราบ'}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
+    };
+  } catch (error) {
+    console.error('Google Sheets Error (compareAndSetStockCells):', error);
+    return { ok: false, status: 500, error: 'อัปเดตสต็อกไม่สำเร็จ' };
+  }
 }
 
 /* ─── History sheet helpers ─── */
