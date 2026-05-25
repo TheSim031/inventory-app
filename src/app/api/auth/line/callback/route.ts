@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { encodeLineSession, getLineLoginConfig } from '@/lib/lineAuth';
-import { upsertUser } from '@/lib/googleSheets';
+import { findUserRow, upsertUser } from '@/lib/googleSheets';
+import { isUserRole, ROLE_COOKIE, ROLE_HOME } from '@/lib/userRole';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,17 +93,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Incomplete profile from LINE' }, { status: 500 });
   }
 
-  // Record the login in the Users sheet — fire and forget. If the sheet
-  // isn't reachable we don't want to fail the login over it.
-  upsertUser({
-    lineUserId: profile.userId,
-    displayName: profile.displayName,
-  }).catch((err) => console.error('upsertUser failed:', err));
+  // Record the login in the Users sheet and refresh lastLogin. We await
+  // here so the subsequent role lookup sees the row.
+  try {
+    await upsertUser({
+      lineUserId: profile.userId,
+      displayName: profile.displayName,
+    });
+  } catch (err) {
+    console.error('upsertUser failed:', err);
+  }
 
-  // Set session cookie + clear oauth state cookies, then redirect to wherever
-  // the user was trying to go.
-  const target = new URL(nextPath.startsWith('/') ? nextPath : '/role-select', request.url);
+  // Look up the user's saved group. The group is bound permanently to the
+  // LINE userId at first-time selection — on subsequent logins we restore
+  // it from the sheet so the user skips /role-select and goes straight to
+  // their home. Only an Admin can change the saved group (via the admin
+  // panel / sheet directly).
+  let savedRole: string | null = null;
+  try {
+    const row = await findUserRow(profile.userId);
+    if (row && row.role && isUserRole(row.role)) {
+      savedRole = row.role;
+    }
+  } catch (err) {
+    console.error('findUserRow on callback failed:', err);
+  }
+
+  // Decide where to land. If the user already has a saved role, override
+  // whatever nextPath said and send them to their role's home — the saved
+  // group is authoritative now.
+  let landing = nextPath.startsWith('/') ? nextPath : '/role-select';
+  if (savedRole && isUserRole(savedRole)) {
+    landing = ROLE_HOME[savedRole];
+  }
+
+  const target = new URL(landing, request.url);
   const response = NextResponse.redirect(target);
+
+  // Mirror the saved role into a server-trusted role cookie so server pages
+  // (and the auth guards) can see it without another Sheets round-trip.
+  if (savedRole && isUserRole(savedRole)) {
+    response.cookies.set(ROLE_COOKIE, savedRole, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
   response.cookies.set(
     'line_user',
     encodeLineSession({

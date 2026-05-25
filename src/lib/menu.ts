@@ -11,55 +11,69 @@ export type MenuItem = {
 };
 
 /**
- * The complete menu tree. Visibility per role is decided by
- * ROLE_MENU_IDS below — anything not in a role's allow-list is hidden.
+ * Two-layer menu tree. The /home landing page renders top-level items as
+ * "main category" cards; clicking a card reveals its sub-items in a slide
+ * panel. The MainNav top bar uses the same tree as a dropdown menu.
  *
- * Children's IDs are included in the role allow-list independently of
- * the parent, so we can show a parent dropdown even when only one child
- * is visible to that role.
+ * Visibility per role is decided by ROLE_MENU_IDS below — anything not in a
+ * role's allow-list is hidden. A parent is shown when its own id OR any of
+ * its children's ids are visible.
  */
 export const MENU_ITEMS: MenuItem[] = [
-  // "จัดของ" (/out) was removed in V7 — the approval flow was deleted
-  // when Sheet 2 lost its status/requisitionId columns. Stock moves
-  // happen directly via /in (warehouse receive) and /request (user issue).
   {
     id: 'warehouse',
-    label: 'คลัง',
+    label: 'คลังสินค้า',
     icon: '📦',
     children: [
-      { id: 'in', label: 'รับของ', href: '/in', icon: '📥' },
+      { id: 'in', label: 'บันทึกรับของ', href: '/in', icon: '📥' },
+      { id: 'request', label: 'ใบเบิกสินค้า', href: '/request', icon: '📝' },
+      { id: 'limit-stock', label: 'Limit Stock', href: '/limit-stock', icon: '🚨' },
     ],
   },
-  { id: 'request', label: 'เบิก', href: '/request', icon: '📝' },
-  { id: 'inspect', label: 'ตรวจสอบ', href: '/inspect', icon: '🔍' },
-  { id: 'inspect-history', label: 'ประวัติตรวจสอบ', href: '/inspect/history', icon: '📋' },
   {
-    id: 'admin-users',
-    label: 'ข้อมูลผู้ใช้งาน',
-    href: '/admin/users',
-    icon: '👥',
+    id: 'inspect',
+    label: 'งานตรวจสอบ (QC)',
+    icon: '🔍',
+    children: [
+      { id: 'inspect-do', label: 'ตรวจสอบรับเข้า', href: '/inspect', icon: '✅' },
+      { id: 'inspect-history', label: 'ประวัติตรวจสอบ', href: '/inspect/history', icon: '📋' },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'ระบบ',
+    icon: '🛠',
     creatorOnly: true,
+    children: [
+      {
+        id: 'admin-users',
+        label: 'ข้อมูลผู้ใช้งาน',
+        href: '/admin/users',
+        icon: '👥',
+        creatorOnly: true,
+      },
+    ],
   },
 ];
 
 /**
- * Default per-role visibility. Each entry is the list of menu IDs the
- * role is allowed to see. A parent dropdown is shown if either the
- * parent ID OR any of its children IDs are in the list.
+ * Default per-role visibility. Each entry is the list of menu IDs the role
+ * is allowed to see. A parent dropdown / card is shown if either the parent
+ * ID OR any of its children IDs are in the list.
  *
- * Rules from the spec:
- *   WAREHOUSE  : "คลัง (รับของ+จัดของ)" + "เบิก" + "ประวัติตรวจสอบ"
- *   PURCHASING : "เบิก" + "ประวัติตรวจสอบ"
- *   EXECUTIVE  : "ประวัติตรวจสอบ"
- *   QC         : "ตรวจสอบ" + "ประวัติตรวจสอบ"
- *   ASSEMBLY   : "เบิก"
+ * Rules from the spec (unchanged in scope, restructured under new parents):
+ *   WAREHOUSE  : คลัง (รับของ + เบิก + Limit Stock) + ประวัติตรวจสอบ
+ *   PURCHASING : คลัง (เบิก + Limit Stock) + ประวัติตรวจสอบ
+ *   EXECUTIVE  : ประวัติตรวจสอบ
+ *   QC         : ตรวจสอบรับเข้า + ประวัติตรวจสอบ
+ *   ASSEMBLY   : คลัง (เบิก)
  */
 export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
-  WAREHOUSE:  ['warehouse', 'in', 'request', 'inspect-history'],
-  PURCHASING: ['request', 'inspect-history'],
-  EXECUTIVE:  ['inspect-history'],
-  QC:         ['inspect', 'inspect-history'],
-  ASSEMBLY:   ['request'],
+  WAREHOUSE:  ['warehouse', 'in', 'request', 'limit-stock', 'inspect', 'inspect-history'],
+  PURCHASING: ['warehouse', 'request', 'limit-stock', 'inspect', 'inspect-history'],
+  EXECUTIVE:  ['inspect', 'inspect-history'],
+  QC:         ['inspect', 'inspect-do', 'inspect-history'],
+  ASSEMBLY:   ['warehouse', 'request'],
 };
 
 /**
@@ -97,6 +111,7 @@ export function getAllMenuIds(includeCreatorOnly = false): Array<{
     if (item.children?.length) {
       out.push({ id: item.id, label: item.label });
       for (const c of item.children) {
+        if (c.creatorOnly && !includeCreatorOnly) continue;
         out.push({ id: c.id, label: c.label, parentLabel: item.label });
       }
     } else {

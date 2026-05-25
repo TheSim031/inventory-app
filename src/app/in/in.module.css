@@ -63,7 +63,8 @@
 
 .inputGroup input {
   width: 100%;
-  padding: 0.8rem 1rem;
+  padding: 0.85rem 1rem;
+  min-height: 48px;
   border: 1.5px solid var(--border-color);
   border-radius: var(--radius-md);
   font-size: 1rem;
@@ -188,9 +189,10 @@
   width: 100%;
   background: var(--primary-color);
   color: white;
-  padding: 0.95rem 1rem;
+  padding: 1rem;
+  min-height: 56px;
   border-radius: var(--radius-md);
-  font-size: 1rem;
+  font-size: 1.02rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -224,7 +226,8 @@
 }
 
 .addRowBtn {
-  padding: 0.5rem 0.9rem;
+  padding: 0.65rem 1rem;
+  min-height: 44px;
   border: 1.5px dashed var(--primary-color);
   border-radius: var(--radius-md);
   color: var(--primary-color);
@@ -269,10 +272,11 @@
 }
 
 .itemRowRemove {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: var(--danger-color);
   font-weight: 700;
-  padding: 0.25rem 0.55rem;
+  padding: 0.5rem 0.85rem;
+  min-height: 36px;
   border-radius: var(--radius-md);
   background: transparent;
   transition: background 0.15s;
@@ -289,9 +293,46 @@
   align-items: flex-start;
 }
 
-@media (max-width: 560px) {
+/* ─── Mobile (< 768px) ─── */
+@media (max-width: 767px) {
+  .container {
+    padding: 1rem 0.85rem;
+  }
+  .header h1 {
+    font-size: 1.45rem;
+  }
+  .header p {
+    font-size: 0.92rem;
+    margin-bottom: 1.1rem;
+  }
+  .card {
+    padding: 1.1rem 1rem;
+    border-radius: 0.9rem;
+  }
+  .sectionTitle {
+    font-size: 1.05rem;
+    margin-bottom: 1rem;
+    padding-right: 1rem;
+  }
+  .itemRow {
+    padding: 0.85rem 0.85rem 0.4rem;
+  }
   .itemRowGrid {
     grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+  .itemRowGrid > .inputGroup[style] {
+    max-width: 100% !important;
+  }
+  .suggestionList {
+    max-height: 55vh;
+  }
+  .suggestionItem {
+    min-height: 56px;
+    padding: 0.85rem 0.75rem;
+  }
+  .imagesSection {
+    margin: 1.25rem 0 0.75rem;
   }
 }
 

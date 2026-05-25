@@ -26,12 +26,17 @@ export const ROLE_LABELS: Record<UserRole, { th: string; en: string; icon: strin
  * Where each role lands when they enter the system. Used both for post-
  * login redirects and for the "go to my home" link in shared chrome.
  */
+/**
+ * Where each role lands when they enter the system. Everyone goes to the
+ * unified two-layer `/home` menu — clicking a main-category card from there
+ * reveals the role-appropriate sub-items.
+ */
 export const ROLE_HOME: Record<UserRole, string> = {
-  WAREHOUSE:  '/in',
-  PURCHASING: '/purchasing',
-  EXECUTIVE:  '/executive',
-  QC:         '/qc',
-  ASSEMBLY:   '/request',
+  WAREHOUSE:  '/home',
+  PURCHASING: '/home',
+  EXECUTIVE:  '/home',
+  QC:         '/home',
+  ASSEMBLY:   '/home',
 };
 
 export function isUserRole(value: unknown): value is UserRole {

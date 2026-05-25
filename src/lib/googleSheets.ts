@@ -594,6 +594,236 @@ export async function readHistorySheet(): Promise<HistoryRow[] | null> {
   return result;
 }
 
+/* ─── Limit-stock threshold helpers ─── */
+/**
+ * Per-item low-stock thresholds live in a dedicated tab so the main
+ * "สต็อกสินค้า" sheet (Sheet 1, all formulas) is never touched. The tab is
+ * created lazily on first read/write so admins don't have to do any setup.
+ *
+ *   Tab name : "เกณฑ์แจ้งเตือนสต็อก"
+ *   Row 1    : title (merged-ish)
+ *   Row 2    : header  (รหัสสินค้า | เกณฑ์ขั้นต่ำ | แก้ไขล่าสุด | ผู้แก้ไข)
+ *   Row 3+   : data    (one row per item code that has a non-default threshold)
+ *
+ * Items without a row in the table fall back to LIMIT_STOCK_DEFAULT_THRESHOLD.
+ */
+export const LIMIT_STOCK_DEFAULT_THRESHOLD = 500;
+const LIMIT_STOCK_SHEET_NAME = 'เกณฑ์แจ้งเตือนสต็อก';
+const FALLBACK_LIMIT_STOCK_TABS = [
+  'เกณฑ์แจ้งเตือนสต็อก',
+  'LimitStock',
+  'Thresholds',
+];
+const LIMIT_STOCK_RANGE = 'A:D';
+const LIMIT_STOCK_HEADER_ROW_INDEX = 1; // sheet row 2
+const LIMIT_STOCK_DATA_START_INDEX = 2; // sheet row 3
+
+export type LimitStockRow = {
+  sheetRow: number;
+  code: string;
+  threshold: number;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+async function ensureLimitStockSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_LIMIT_STOCK_TABS) {
+      if (tabs.includes(f)) return f;
+    }
+  }
+
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: LIMIT_STOCK_SHEET_NAME } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${LIMIT_STOCK_SHEET_NAME}!A1:D2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — เกณฑ์แจ้งเตือนสต็อกต่ำสำหรับฝ่ายจัดซื้อ'],
+          ['รหัสสินค้า', 'เกณฑ์ขั้นต่ำ', 'แก้ไขล่าสุด', 'ผู้แก้ไข'],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return LIMIT_STOCK_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureLimitStockSheet):', error);
+    return null;
+  }
+}
+
+export async function readLimitStockSheet(): Promise<LimitStockRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureLimitStockSheet();
+  if (!tab) return null;
+
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!${LIMIT_STOCK_RANGE}`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readLimitStockSheet):', error);
+    return null;
+  }
+
+  if (rawRows.length <= LIMIT_STOCK_HEADER_ROW_INDEX) return [];
+
+  const result: LimitStockRow[] = [];
+  for (let i = LIMIT_STOCK_DATA_START_INDEX; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const code = String(row[0] ?? '').trim();
+    if (!code) continue;
+    const rawThreshold = String(row[1] ?? '').trim();
+    const threshold = Math.max(
+      0,
+      parseInt(rawThreshold.replace(/,/g, ''), 10) || LIMIT_STOCK_DEFAULT_THRESHOLD,
+    );
+    result.push({
+      sheetRow: i + 1,
+      code,
+      threshold,
+      updatedAt: String(row[2] ?? '').trim(),
+      updatedBy: String(row[3] ?? '').trim(),
+    });
+  }
+  return result;
+}
+
+export type ThresholdUpdate = { code: string; threshold: number };
+
+/**
+ * Upsert a batch of per-item thresholds. Rows whose threshold matches the
+ * default are deleted to keep the tab tidy. Returns the count of writes
+ * performed; null if the sheet client is unavailable.
+ */
+export async function upsertLimitStockThresholds(args: {
+  updates: ThresholdUpdate[];
+  updatedBy: string;
+}): Promise<{ updated: number; cleared: number } | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureLimitStockSheet();
+  if (!tab) return null;
+
+  const existing = await readLimitStockSheet();
+  if (existing === null) return null;
+  const byCode = new Map(existing.map((r) => [r.code, r]));
+
+  // Need the sheetId for deleteDimension when clearing rows back to default.
+  let sheetId: number | null = null;
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties(sheetId,title)',
+    });
+    sheetId = (meta.data.sheets || []).find(
+      (s) => s.properties?.title === tab,
+    )?.properties?.sheetId ?? null;
+  } catch (error) {
+    console.error('Google Sheets Error (upsertLimitStockThresholds: meta):', error);
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const author = (args.updatedBy || '').trim();
+  let updated = 0;
+  let cleared = 0;
+
+  // Sequence: update-in-place rows, append new rows, then delete rows that
+  // were reset to the default. Deletes happen LAST and bottom-to-top so the
+  // row numbers we captured up-front stay valid.
+  const toAppend: string[][] = [];
+  const toDelete: number[] = [];
+
+  for (const upd of args.updates) {
+    const code = (upd.code || '').trim();
+    if (!code) continue;
+    const threshold = Math.max(0, Math.floor(upd.threshold ?? LIMIT_STOCK_DEFAULT_THRESHOLD));
+    const row = byCode.get(code);
+
+    if (threshold === LIMIT_STOCK_DEFAULT_THRESHOLD) {
+      if (row) {
+        toDelete.push(row.sheetRow);
+        cleared += 1;
+      }
+      continue;
+    }
+
+    if (row) {
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${tab}!A${row.sheetRow}:D${row.sheetRow}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[code, threshold, now, author]] },
+        });
+        updated += 1;
+      } catch (error) {
+        console.error('Google Sheets Error (upsertLimitStockThresholds: update):', error);
+      }
+    } else {
+      toAppend.push([code, String(threshold), now, author]);
+    }
+  }
+
+  if (toAppend.length > 0) {
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${tab}!${LIMIT_STOCK_RANGE}`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: toAppend },
+      });
+      updated += toAppend.length;
+    } catch (error) {
+      console.error('Google Sheets Error (upsertLimitStockThresholds: append):', error);
+    }
+  }
+
+  if (toDelete.length > 0 && sheetId !== null) {
+    const requests = toDelete
+      .sort((a, b) => b - a)
+      .map((sheetRow) => ({
+        deleteDimension: {
+          range: {
+            sheetId: sheetId!,
+            dimension: 'ROWS' as const,
+            startIndex: sheetRow - 1,
+            endIndex: sheetRow,
+          },
+        },
+      }));
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests },
+      });
+    } catch (error) {
+      console.error('Google Sheets Error (upsertLimitStockThresholds: delete):', error);
+    }
+  }
+
+  return { updated, cleared };
+}
+
 /* ─── Inspections sheet helpers ─── */
 
 const INSPECTIONS_SHEET_NAME = 'รอตรวจสอบ';

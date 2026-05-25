@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/monthly-cleanup-notify",
       "schedule": "0 2 1 * *"
+    },
+    {
+      "path": "/api/cron/limit-stock-daily",
+      "schedule": "0 2 * * *"
     }
   ]
 }

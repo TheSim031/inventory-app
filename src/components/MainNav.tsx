@@ -25,16 +25,20 @@ type MeResponse = {
 const HIDDEN_ON = ['/', '/login', '/role-select'];
 
 /**
- * Global top-of-page navigation. Renders nothing on auth pages so the
- * landing/role-select screens stay uncluttered. The visible menu items
- * are computed from the user's role + creator flag + per-user override
- * (filled in once the admin panel ships).
+ * Global top-of-page navigation.
+ *
+ * Two layouts share the same data:
+ *   - Desktop (≥ 768px) — horizontal tab bar with click-to-open dropdowns.
+ *   - Mobile  (< 768px) — hamburger icon that opens a full-height drawer
+ *     with the menu tree stacked vertically. Sub-items are always visible
+ *     under their parent so the user only taps once.
  */
 export function MainNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: me, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,6 +61,21 @@ export function MainNav() {
     window.addEventListener('storage', onAuthEvent);
     return () => window.removeEventListener('storage', onAuthEvent);
   }, [mutate, router]);
+
+  // Auto-close mobile drawer on route change so users don't have to tap close.
+  useEffect(() => {
+    setMobileOpen(false);
+    setOpenDropdown(null);
+  }, [pathname]);
+
+  // Lock page scroll while drawer is open.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileOpen]);
 
   if (HIDDEN_ON.includes(pathname)) return null;
   if (!me?.isAuthenticated) return null;
@@ -93,7 +112,6 @@ export function MainNav() {
   };
 
   const renderTopItem = (item: MenuItem) => {
-    // Parent with children → only show if parent or any child is visible
     if (item.children?.length) {
       const visibleChildren = item.children.filter((c) => visibleIds.has(c.id));
       const parentVisible = visibleIds.has(item.id) || visibleChildren.length > 0;
@@ -128,7 +146,6 @@ export function MainNav() {
         </div>
       );
     }
-    // Leaf
     if (!visibleIds.has(item.id)) return null;
     const active = isActive(item);
     return (
@@ -138,6 +155,48 @@ export function MainNav() {
         className={`mainnav-tab${active ? ' mainnav-tab-active' : ''}`}
       >
         <span className="mainnav-icon">{item.icon}</span> {item.label}
+      </Link>
+    );
+  };
+
+  // Mobile drawer renders the whole tree flat (parent label + children) so
+  // there is no second tap to discover sub-items.
+  const renderMobileItem = (item: MenuItem) => {
+    if (item.children?.length) {
+      const visibleChildren = item.children.filter((c) => visibleIds.has(c.id));
+      const parentVisible = visibleIds.has(item.id) || visibleChildren.length > 0;
+      if (!parentVisible) return null;
+      return (
+        <div key={item.id} className="mainnav-mobile-group">
+          <div className="mainnav-mobile-grouphead">
+            <span className="mainnav-icon">{item.icon}</span> {item.label}
+          </div>
+          <div className="mainnav-mobile-children">
+            {visibleChildren.map((c) => (
+              <Link
+                key={c.id}
+                href={c.href || '#'}
+                className={`mainnav-mobile-link${isActive(c) ? ' mainnav-mobile-link-active' : ''}`}
+              >
+                <span className="mainnav-icon">{c.icon}</span>
+                <span className="mainnav-mobile-link-label">{c.label}</span>
+                <span className="mainnav-mobile-link-arrow">→</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (!visibleIds.has(item.id)) return null;
+    return (
+      <Link
+        key={item.id}
+        href={item.href || '#'}
+        className={`mainnav-mobile-link mainnav-mobile-link-solo${isActive(item) ? ' mainnav-mobile-link-active' : ''}`}
+      >
+        <span className="mainnav-icon">{item.icon}</span>
+        <span className="mainnav-mobile-link-label">{item.label}</span>
+        <span className="mainnav-mobile-link-arrow">→</span>
       </Link>
     );
   };
@@ -169,13 +228,34 @@ export function MainNav() {
   return (
     <nav className="mainnav no-print" ref={navRef}>
       <div className="mainnav-inner">
-        <div className="mainnav-items">
+        {/* Hamburger — visible only on mobile. */}
+        <button
+          type="button"
+          className={`mainnav-hamburger${mobileOpen ? ' mainnav-hamburger-open' : ''}`}
+          onClick={() => setMobileOpen((v) => !v)}
+          aria-label={mobileOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
+          aria-expanded={mobileOpen}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+
+        {/* Desktop horizontal tabs. */}
+        <div className="mainnav-items mainnav-items-desktop">
           {MENU_ITEMS.map(renderTopItem)}
         </div>
+
         <div className="mainnav-right">
           {userBadge}
-          {!me.isCreator && me.role && (
-            <Link href="/role-select" className="mainnav-secondary" title="เปลี่ยนกลุ่ม">
+          {/*
+            Non-creator users cannot change their own group once it is bound
+            (locked by /api/auth/role + the role-select server guard). The
+            self-service "🔄 เปลี่ยนกลุ่ม" shortcut is therefore only shown
+            to Creator sessions, who use it for impersonation / support.
+          */}
+          {me.isCreator && (
+            <Link href="/role-select" className="mainnav-secondary" title="เปลี่ยนกลุ่ม (Creator)">
               🔄
             </Link>
           )}
@@ -188,6 +268,52 @@ export function MainNav() {
           </button>
         </div>
       </div>
+
+      {/* Mobile drawer */}
+      {mobileOpen && (
+        <div
+          className="mainnav-mobile-backdrop"
+          role="presentation"
+          onClick={() => setMobileOpen(false)}
+        >
+          <aside
+            className="mainnav-mobile-panel"
+            role="dialog"
+            aria-label="เมนูหลัก"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mainnav-mobile-head">
+              <div className="mainnav-mobile-head-title">เมนูหลัก</div>
+              <button
+                type="button"
+                className="mainnav-mobile-close"
+                onClick={() => setMobileOpen(false)}
+                aria-label="ปิดเมนู"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mainnav-mobile-body">
+              {MENU_ITEMS.map(renderMobileItem)}
+            </div>
+            <div className="mainnav-mobile-foot">
+              {userBadge}
+              {me.isCreator && (
+                <Link href="/role-select" className="mainnav-secondary mainnav-mobile-secondary">
+                  🔄 เปลี่ยนกลุ่ม
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mainnav-secondary mainnav-logout mainnav-mobile-secondary"
+              >
+                ออกจากระบบ
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
     </nav>
   );
 }

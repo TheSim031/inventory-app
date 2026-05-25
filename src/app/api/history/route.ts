@@ -7,6 +7,7 @@ import {
 } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
+import { sendUrgentZeroStockAlert } from '@/lib/limitStockNotify';
 import { requireAuth, requireRoles } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -200,6 +201,18 @@ export async function POST(request: NextRequest) {
         })
         .catch(console.error);
     }
+
+    // Urgent low-stock check: any item touched by this movement that now
+    // sits at 0 in Sheet 1 triggers an immediate PURCHASING alert. Runs for
+    // both IN and OUT because IN could be a tiny topup that still leaves
+    // the formula's net at 0. Don't await — never block the user response.
+    sendUrgentZeroStockAlert(items.map((it) => it.code))
+      .then((res) => {
+        if (res && res.delivery && !res.delivery.ok) {
+          console.error('Urgent zero-stock LINE dispatch failed:', res.delivery);
+        }
+      })
+      .catch((err) => console.error('Urgent zero-stock check failed:', err));
 
     return NextResponse.json(
       { success: true, count: items.length, type },

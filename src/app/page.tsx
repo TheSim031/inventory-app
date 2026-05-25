@@ -7,14 +7,24 @@ import styles from './page.module.css';
 
 export const dynamic = 'force-dynamic';
 
+type HomeSearchParams = Promise<{ next?: string | string[] }>;
+
 /**
  * Landing page = login screen. Redirects you onward if you're already
  * signed in:
  *   - signed in + has a role  → straight to that role's home
  *   - signed in + no role     → /role-select
  *   - not signed in           → show the login choices
+ *
+ * When the proxy bounces an unauthenticated user here with `?next=<path>`,
+ * we forward that path into the LINE Login button so the OAuth callback
+ * brings them back to the page they originally tried to open.
  */
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: HomeSearchParams;
+}) {
   const store = await cookies();
   const lineUser = decodeLineSession(store.get('line_user')?.value);
   const adminAuth = store.get('auth_session')?.value === 'authenticated';
@@ -23,10 +33,24 @@ export default async function Home() {
   if (authed) {
     const rawRole = store.get(ROLE_COOKIE)?.value;
     if (isUserRole(rawRole)) {
-      redirect(ROLE_HOME[rawRole]);
+      redirect(ROLE_HOME[rawRole]); // unified /home for all roles
     }
+    // No bound role yet → first-time onboarding screen. The /role-select
+    // server guard will redirect back here if the sheet already has a
+    // bound role for this LINE userId.
     redirect('/role-select');
   }
+
+  // Forward the proxy's `?next=` (deep-link destination) into the OAuth
+  // start URL — only when it looks like a same-site path, to avoid open
+  // redirects.
+  const resolvedParams = (await searchParams) ?? {};
+  const rawNext = resolvedParams.next;
+  const candidate = Array.isArray(rawNext) ? rawNext[0] : rawNext;
+  const safeNext =
+    typeof candidate === 'string' && candidate.startsWith('/') && !candidate.startsWith('//')
+      ? candidate
+      : '/role-select';
 
   // Read LINE config presence so we know whether to show the LINE button.
   // We don't pass a request here, but the env-based fallback is enough to
@@ -51,7 +75,7 @@ export default async function Home() {
 
         {lineLoginEnabled ? (
           <a
-            href={`/api/auth/line?next=${encodeURIComponent('/role-select')}`}
+            href={`/api/auth/line?next=${encodeURIComponent(safeNext)}`}
             className={styles.btnLineLogin}
           >
             🟢 เข้าสู่ระบบด้วย LINE

@@ -1,0 +1,423 @@
+/* ─── Two-layer sport-themed category menu ─── */
+
+.wrap {
+  min-height: calc(100vh - 110px);
+  padding: 1.5rem 1rem 3rem;
+  background:
+    radial-gradient(ellipse at top, rgba(220, 38, 38, 0.08), transparent 55%),
+    linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+}
+
+/* Hero header — racing-stripe accent under the title */
+.hero {
+  max-width: 1100px;
+  margin: 0 auto 2rem;
+  background: #0a0a0a;
+  color: #fff;
+  border-radius: 1.1rem;
+  padding: 2rem 1.5rem 2.25rem;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #0a0a0a;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.35);
+}
+
+.heroStripes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 22px,
+      rgba(220, 38, 38, 0.08) 22px 24px
+    );
+}
+
+.heroBody {
+  position: relative;
+  text-align: center;
+}
+
+.greet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #06c755;
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+}
+
+.title {
+  font-size: 2.1rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0 0 0.65rem;
+}
+
+.title span {
+  color: #DC2626;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #fff;
+  color: #0a0a0a;
+  padding: 0.45rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 2px solid #DC2626;
+}
+
+.roleBadge strong {
+  color: #DC2626;
+}
+
+.subtitle {
+  margin-top: 0.85rem;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  letter-spacing: 0.04em;
+}
+
+/* Main category cards */
+.grid {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.1rem;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 1rem;
+  padding: 1.65rem 1.25rem 1.4rem;
+  text-align: left;
+  border: 2px solid #0a0a0a;
+  border-top: 6px solid #0a0a0a;
+  cursor: pointer;
+  font-family: inherit;
+  color: #0a0a0a;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-top-color 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 70px;
+  height: 70px;
+  background: linear-gradient(135deg, transparent 50%, rgba(220, 38, 38, 0.1) 50%);
+  pointer-events: none;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-top-color: #DC2626;
+  box-shadow: 0 14px 30px -10px rgba(220, 38, 38, 0.3);
+}
+
+.cardLeaf {
+  border-top-color: #DC2626;
+}
+
+.cardIcon {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.cardLabel {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #0a0a0a;
+}
+
+.cardHint {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #DC2626;
+}
+
+/* Empty state when no menus are visible */
+.emptyCard {
+  max-width: 480px;
+  margin: 2rem auto;
+  background: #fff;
+  border: 2px solid #0a0a0a;
+  border-top: 6px solid #DC2626;
+  border-radius: 1rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.25);
+}
+
+.emptyIcon {
+  font-size: 2.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.emptyCard h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+}
+
+.emptyCard p {
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+/* ─── Sub-category slide panel (Layer 2) ─── */
+.slideBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10, 10, 10, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: slide-fade 0.18s ease;
+}
+
+@media (min-width: 720px) {
+  .slideBackdrop {
+    align-items: center;
+  }
+}
+
+.slidePanel {
+  width: 100%;
+  max-width: 720px;
+  background: #fff;
+  border-top: 6px solid #DC2626;
+  border-radius: 1rem 1rem 0 0;
+  box-shadow: 0 -18px 40px -10px rgba(0, 0, 0, 0.35);
+  animation: slide-up 0.22s ease;
+  overflow: hidden;
+}
+
+@media (min-width: 720px) {
+  .slidePanel {
+    border-radius: 1rem;
+    border: 2px solid #0a0a0a;
+    border-top: 6px solid #DC2626;
+  }
+}
+
+.slideHead {
+  background: #0a0a0a;
+  color: #fff;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.slideHeadLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.slideHeadIcon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.slideHeadKicker {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #DC2626;
+  font-weight: 700;
+}
+
+.slideHeadTitle {
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.slideClose {
+  background: transparent;
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.slideClose:hover {
+  background: #DC2626;
+  border-color: #DC2626;
+  transform: rotate(90deg);
+}
+
+.slideBody {
+  padding: 1rem 0.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: 0.7rem;
+  text-decoration: none;
+  color: #0a0a0a;
+  font-weight: 700;
+  background: #fafafa;
+  border: 1.5px solid #e5e5e5;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.subItem:hover {
+  background: rgba(220, 38, 38, 0.06);
+  border-color: #DC2626;
+  transform: translateX(3px);
+}
+
+.subItemIcon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.subItemLabel {
+  flex: 1;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+
+.subItemArrow {
+  color: #DC2626;
+  font-weight: 800;
+}
+
+@keyframes slide-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(20px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Mobile / tablet — two-column card grid for thumb-friendly tapping */
+@media (max-width: 767px) {
+  .wrap {
+    padding: 1rem 0.75rem 5rem;
+  }
+  .hero {
+    padding: 1.5rem 1rem 1.75rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0.9rem;
+  }
+  .title {
+    font-size: 1.55rem;
+    letter-spacing: 0.04em;
+  }
+  .subtitle {
+    font-size: 0.78rem;
+  }
+  .roleBadge {
+    font-size: 0.72rem;
+    padding: 0.4rem 0.85rem;
+  }
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  .card {
+    padding: 1rem 0.85rem 0.9rem;
+    border-radius: 0.85rem;
+    min-height: 132px;
+    gap: 0.4rem;
+  }
+  .card::before {
+    width: 48px;
+    height: 48px;
+  }
+  .cardIcon {
+    font-size: 2rem;
+  }
+  .cardLabel {
+    font-size: 0.92rem;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+  }
+  .cardHint {
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+  }
+  .slideHead {
+    padding: 0.85rem 1rem;
+  }
+  .slideHeadIcon {
+    font-size: 1.6rem;
+  }
+  .slideHeadTitle {
+    font-size: 1.05rem;
+  }
+  .subItem {
+    min-height: 56px;
+    padding: 0.9rem 0.95rem;
+    font-size: 0.95rem;
+  }
+  .subItemIcon {
+    font-size: 1.4rem;
+  }
+}
+
+/* Very small phones — keep two columns but tighter */
+@media (max-width: 360px) {
+  .grid {
+    gap: 0.55rem;
+  }
+  .card {
+    padding: 0.85rem 0.7rem 0.75rem;
+    min-height: 122px;
+  }
+  .cardIcon {
+    font-size: 1.7rem;
+  }
+  .cardLabel {
+    font-size: 0.85rem;
+  }
+}

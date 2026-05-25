@@ -165,6 +165,51 @@ input, textarea, select {
   flex-wrap: wrap;
 }
 
+/* Hamburger button — desktop hidden, mobile shown */
+.mainnav-hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.55rem;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mainnav-hamburger:hover,
+.mainnav-hamburger:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #fff;
+}
+
+.mainnav-hamburger span {
+  display: block;
+  width: 22px;
+  height: 2.5px;
+  background: #fff;
+  border-radius: 2px;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.mainnav-hamburger-open span:nth-child(1) {
+  transform: translateY(7.5px) rotate(45deg);
+  background: var(--primary-color);
+}
+.mainnav-hamburger-open span:nth-child(2) {
+  opacity: 0;
+}
+.mainnav-hamburger-open span:nth-child(3) {
+  transform: translateY(-7.5px) rotate(-45deg);
+  background: var(--primary-color);
+}
+
 .mainnav-tab {
   display: inline-flex;
   align-items: center;
@@ -317,6 +362,245 @@ input, textarea, select {
 .mainnav-logout:hover {
   color: #fca5a5;
   border-color: #fca5a5;
+}
+
+/* ─── Mobile drawer (slides in from left under 768px) ─── */
+.mainnav-mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 90;
+  animation: mainnav-fade 0.18s ease;
+}
+
+.mainnav-mobile-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(86vw, 340px);
+  background: var(--dark-surface);
+  color: #fff;
+  border-right: 4px solid var(--primary-color);
+  box-shadow: 12px 0 30px -10px rgba(0, 0, 0, 0.5);
+  z-index: 91;
+  display: flex;
+  flex-direction: column;
+  animation: mainnav-slide-in 0.22s ease;
+  overflow-y: auto;
+}
+
+.mainnav-mobile-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  background: linear-gradient(135deg, #DC2626 0%, #0A0A0A 70%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mainnav-mobile-head-title {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.mainnav-mobile-close {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.mainnav-mobile-close:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  transform: rotate(90deg);
+}
+
+.mainnav-mobile-body {
+  flex: 1;
+  padding: 0.85rem 0.85rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mainnav-mobile-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mainnav-mobile-grouphead {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid rgba(220, 38, 38, 0.35);
+}
+
+.mainnav-mobile-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mainnav-mobile-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 48px;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.7rem;
+  color: #f5f5f5;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.mainnav-mobile-link:active {
+  transform: scale(0.98);
+}
+
+.mainnav-mobile-link:hover {
+  background: rgba(220, 38, 38, 0.15);
+  border-color: var(--primary-color);
+}
+
+.mainnav-mobile-link-solo {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mainnav-mobile-link-active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+.mainnav-mobile-link-active:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.mainnav-mobile-link-label {
+  flex: 1;
+}
+
+.mainnav-mobile-link-arrow {
+  opacity: 0.5;
+  font-weight: 700;
+}
+
+.mainnav-mobile-foot {
+  flex-shrink: 0;
+  padding: 0.85rem 0.85rem 1.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.mainnav-mobile-secondary {
+  width: 100%;
+  text-align: center;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes mainnav-slide-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes mainnav-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ─── Mobile breakpoint: swap nav layout ─── */
+@media (max-width: 767px) {
+  .mainnav-inner {
+    padding: 0.45rem 0.75rem;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+  }
+  .mainnav-items-desktop {
+    display: none;
+  }
+  .mainnav-hamburger {
+    display: inline-flex;
+  }
+  .mainnav-right {
+    margin-left: auto;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+  }
+  /* Compress badge + logout pill so they fit on tiny phones */
+  .mainnav-badge {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.7rem;
+    max-width: 130px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .mainnav-role {
+    display: none;
+  }
+  .mainnav-secondary {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.7rem;
+  }
+  .company-header {
+    padding: 0.6rem 0.75rem;
+  }
+  .company-header-inner {
+    gap: 0.55rem;
+  }
+  .company-logo {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* Hide hamburger on desktop */
+@media (min-width: 768px) {
+  .mainnav-hamburger {
+    display: none;
+  }
+}
+
+/* ─── Touch-friendly form defaults (apply globally) ─── */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* prevents iOS Safari zoom-on-focus */
+  }
+  button,
+  [role='button'],
+  a.btn,
+  input[type='submit'] {
+    min-height: 44px;
+  }
 }
 
 /* ─── Creator credit (fixed bottom-left, clickable for secret login) ─── */
