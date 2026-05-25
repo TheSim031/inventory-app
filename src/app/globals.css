@@ -100,13 +100,15 @@ input, textarea, select {
 }
 
 .company-logo {
-  width: 44px;
   height: 44px;
+  width: auto;
+  max-width: 220px;
   border-radius: var(--radius-md);
-  background: #fff;
   border: 2px solid var(--primary-color);
   flex-shrink: 0;
-  background-image: linear-gradient(135deg, transparent 45%, var(--primary-color) 45%, var(--primary-color) 55%, transparent 55%);
+  object-fit: contain;
+  background: #0a0a0a;
+  display: block;
 }
 
 .company-name {
@@ -576,8 +578,8 @@ input, textarea, select {
     gap: 0.55rem;
   }
   .company-logo {
-    width: 34px;
     height: 34px;
+    max-width: 160px;
   }
 }
 
@@ -606,40 +608,61 @@ input, textarea, select {
 /* ─── Creator credit (fixed bottom-left, clickable for secret login) ─── */
 .creator-credit-btn {
   position: fixed;
-  left: 12px;
-  bottom: 10px;
+  left: 10px;
+  /* Respect iOS safe-area so the pill doesn't shift under the home indicator
+     when the mobile URL bar collapses/expands during scroll. */
+  bottom: max(8px, env(safe-area-inset-bottom));
   z-index: 50;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.88);
-  padding: 0.35rem 0.8rem;
+  font-size: 0.6rem;
+  color: #9ca3af;
+  background: transparent;
+  padding: 0.2rem 0.5rem;
   border-radius: 9999px;
-  border: 1px solid var(--border-color);
-  letter-spacing: 0.06em;
+  border: none;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  backdrop-filter: blur(6px);
-  transition: color 0.15s, border-color 0.15s, transform 0.15s;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s;
   font-family: inherit;
+  /* Lock onto the layout viewport so the pill never animates with the
+     address-bar show/hide jitter on iOS/Android. */
+  will-change: auto;
+  transform: translateZ(0);
 }
 
 .creator-credit-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--text-primary);
-  transform: translateY(-1px);
+  opacity: 1;
+  color: var(--text-muted);
 }
 
 .creator-credit-btn-active {
   background: var(--primary-color);
   color: #fff;
-  border-color: var(--primary-color);
+  opacity: 1;
+  padding: 0.25rem 0.6rem;
 }
 
 .creator-credit-btn-active:hover {
   background: var(--primary-hover);
   color: #fff;
-  border-color: var(--primary-hover);
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .creator-credit-btn {
+    font-size: 0.5rem;
+    padding: 0.15rem 0.4rem;
+    letter-spacing: 0.03em;
+    left: 6px;
+    bottom: max(4px, env(safe-area-inset-bottom));
+    opacity: 0.45;
+  }
+  /* No hover lift on mobile — keeps the pill locked at the bottom. */
+  .creator-credit-btn:hover {
+    transform: translateZ(0);
+  }
 }
 
 /* Creator login modal */
