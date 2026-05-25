@@ -39,7 +39,7 @@ export default async function Home() {
         <h1>
           PIONEER <span>STOCK</span>
         </h1>
-        <p>Inventory · Requisition · Pick & Pack</p>
+        <p>Inventory · Requisition · QC</p>
       </header>
 
       <div className={styles.loginCard}>

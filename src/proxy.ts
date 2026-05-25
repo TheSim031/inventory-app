@@ -30,13 +30,10 @@ const RULES: Rule[] = [
   // (so the more-specific path wins the first-match).
   { match: (p) => p === '/inspect' || p.startsWith('/inspect/'), allowed: ['QC'] },
 
-  // Warehouse pages. /out was removed in V7 (approval flow deleted) — keep
-  // a rule with an empty allow-list so any deep-link still gets routed to
-  // /403 rather than rendering a stale UI that calls a 410 endpoint.
+  // Warehouse pages (V7: /out was deleted along with the approval flow).
   { match: (p) => p === '/in' || p.startsWith('/in/'), allowed: ['WAREHOUSE'] },
-  { match: (p) => p === '/out' || p.startsWith('/out/'), allowed: [] },
 
-  // Requisition (เบิก) — warehouse fulfills, purchasing/assembly request.
+  // Requisition (เบิก) — any of these roles can submit OUT directly.
   {
     match: (p) => p === '/request' || p.startsWith('/request/'),
     allowed: ['WAREHOUSE', 'PURCHASING', 'ASSEMBLY'],
@@ -111,7 +108,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/in/:path*',
-    '/out/:path*',
     '/request/:path*',
     '/inspect/:path*',
     '/purchasing/:path*',

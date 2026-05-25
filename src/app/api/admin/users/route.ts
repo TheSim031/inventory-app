@@ -20,11 +20,16 @@ export async function GET(request: NextRequest) {
   if (!requireCreator(request)) {
     return NextResponse.json({ error: 'Creator session required' }, { status: 403 });
   }
-  const rows = await readUsersSheet();
-  if (rows === null) {
+  try {
+    const rows = await readUsersSheet();
+    if (rows === null) {
+      return NextResponse.json({ error: 'อ่านตารางผู้ใช้งานไม่ได้' }, { status: 500 });
+    }
+    return NextResponse.json({ users: rows });
+  } catch (err) {
+    console.error('Google Sheets Error (GET /api/admin/users):', err);
     return NextResponse.json({ error: 'อ่านตารางผู้ใช้งานไม่ได้' }, { status: 500 });
   }
-  return NextResponse.json({ users: rows });
 }
 
 type PatchBody = {
@@ -54,28 +59,35 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Role: allow empty string to clear, otherwise must be a valid role.
-  if (role !== undefined) {
-    if (role !== '' && !isUserRole(role)) {
-      return NextResponse.json({ error: `Invalid role "${role}"` }, { status: 400 });
-    }
-    await updateUserRole(lineUserId, role);
+  if (role !== undefined && role !== '' && !isUserRole(role)) {
+    return NextResponse.json({ error: `Invalid role "${role}"` }, { status: 400 });
+  }
+  if (
+    customMenus !== undefined &&
+    (!Array.isArray(customMenus) || customMenus.some((x) => typeof x !== 'string'))
+  ) {
+    return NextResponse.json(
+      { error: 'customMenus must be string[]' },
+      { status: 400 },
+    );
   }
 
-  if (customMenus !== undefined) {
-    if (!Array.isArray(customMenus) || customMenus.some((x) => typeof x !== 'string')) {
-      return NextResponse.json(
-        { error: 'customMenus must be string[]' },
-        { status: 400 },
-      );
+  try {
+    if (role !== undefined) {
+      await updateUserRole(lineUserId, role);
     }
-    const ok = await updateUserCustomMenus(lineUserId, customMenus);
-    if (!ok) {
-      return NextResponse.json(
-        { error: 'อัปเดต customMenus ไม่สำเร็จ' },
-        { status: 500 },
-      );
+    if (customMenus !== undefined) {
+      const ok = await updateUserCustomMenus(lineUserId, customMenus);
+      if (!ok) {
+        return NextResponse.json(
+          { error: 'อัปเดต customMenus ไม่สำเร็จ' },
+          { status: 500 },
+        );
+      }
     }
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Google Sheets Error (PATCH /api/admin/users):', err);
+    return NextResponse.json({ error: 'อัปเดตข้อมูลผู้ใช้ไม่สำเร็จ' }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true });
 }

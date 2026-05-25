@@ -41,7 +41,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const rows = await readInspectionsSheet();
+  let rows: Awaited<ReturnType<typeof readInspectionsSheet>> = null;
+  try {
+    rows = await readInspectionsSheet();
+  } catch (err) {
+    console.error('Cron readInspectionsSheet failed:', err);
+  }
   const completed = (rows ?? []).filter((r) => r.status === 'COMPLETED');
 
   if (completed.length === 0) {

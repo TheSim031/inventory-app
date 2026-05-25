@@ -352,7 +352,7 @@ export type SheetItemRow = {
 
 export type ItemsSheetSchema = {
   rows: SheetItemRow[];
-  stockColLetter: string; // e.g. 'D' — used when writing stock updates back
+  stockColLetter: string; // e.g. 'D' — informational only; the app no longer writes stock cells (Sheet 1 col D is a formula)
 };
 
 function colIndexToLetter(idx: number): string {

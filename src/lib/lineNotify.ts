@@ -17,12 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN =
   process.env.LINE_ACCESS_TOKEN ||
   '';
 
-export type NotificationType =
-  | 'OUT_RECORDED'
-  | 'IN_RECORDED'
-  | 'OUT_OF_STOCK'
-  | 'PICK_COMPLETE'
-  | 'REQUISITION_REJECTED';
+export type NotificationType = 'OUT_RECORDED' | 'IN_RECORDED';
 
 type ItemEntry = { name: string; quantity: number; code?: string };
 
@@ -45,30 +40,6 @@ export type NotificationPayload =
         recorder: string;
         poRef: string;
         itemsCount: number;
-      };
-    }
-  | {
-      type: 'OUT_OF_STOCK';
-      data: { recorder: string; message: string };
-    }
-  | {
-      type: 'PICK_COMPLETE';
-      data: {
-        recorder: string;
-        requisitionId: string;
-        pickedItems: ItemEntry[];
-        outOfStockItems: ItemEntry[];
-        recipientLineUserId?: string;
-      };
-    }
-  | {
-      type: 'REQUISITION_REJECTED';
-      data: {
-        recorder: string;
-        requisitionId: string;
-        reason: string;
-        items: ItemEntry[];
-        recipientLineUserId?: string;
       };
     };
 
@@ -150,7 +121,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 async function callLine(endpoint: string, body: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
-    console.log('[LINE Stub] missing token, would call', endpoint);
+    console.warn('[LINE] LINE_CHANNEL_ACCESS_TOKEN missing — would have called', endpoint);
     return { ok: false, error: 'LINE_CHANNEL_ACCESS_TOKEN missing' };
   }
   let lastError = '';
@@ -362,13 +333,9 @@ function formatItemList(items: ItemEntry[]): string {
 }
 
 /**
- * Legacy entry point retained for back-compat with existing call sites.
  * Routes each notification type to the right recipients:
- *  - OUT_RECORDED  → WAREHOUSE roles + the requester (push)
- *  - IN_RECORDED   → WAREHOUSE roles (broadcast-style)
- *  - PICK_COMPLETE → requester (push)
- *  - REQUISITION_REJECTED → requester (push)
- *  - OUT_OF_STOCK  → WAREHOUSE roles
+ *  - OUT_RECORDED → WAREHOUSE roles + the requester (push)
+ *  - IN_RECORDED  → WAREHOUSE roles (broadcast-style)
  */
 export async function sendLineNotification<T extends NotificationType>(
   type: T,
@@ -380,7 +347,7 @@ export async function sendLineNotification<T extends NotificationType>(
       const text = `📤 บันทึกการเบิกออก\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการที่เบิก:\n${formatItemList(d.items)}`;
       const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], text)];
       if (d.recipientLineUserId) {
-        const personal = `📝 ยืนยันคำขอเบิกของคุณ\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}\n\nรอคลังจัดของให้ครับ 🙏`;
+        const personal = `📝 ยืนยันคำขอเบิกของคุณ\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
         results.push(await sendLineToUser(d.recipientLineUserId, personal));
       }
       return combineDeliveryResults(results);
@@ -389,41 +356,6 @@ export async function sendLineNotification<T extends NotificationType>(
       const d = data as Extract<NotificationPayload, { type: 'IN_RECORDED' }>['data'];
       const text = `📥 บันทึกการรับเข้า\nผู้รับ: ${d.recorder}\nPO/PX: ${d.poRef}\nจำนวนรายการ: ${d.itemsCount}`;
       return sendLineToRoles(['WAREHOUSE'], text);
-    }
-    case 'OUT_OF_STOCK': {
-      const d = data as Extract<NotificationPayload, { type: 'OUT_OF_STOCK' }>['data'];
-      const text = `❌ บันทึกการเบิกไม่สำเร็จ (โดย ${d.recorder})\n${d.message}`;
-      return sendLineToRoles(['WAREHOUSE'], text);
-    }
-    case 'PICK_COMPLETE': {
-      // Phase 5 spec: notify both the warehouse group AND the requester.
-      // Warehouse needs an audit-trail message; the requester gets a
-      // personal "your items are ready" push.
-      const d = data as Extract<NotificationPayload, { type: 'PICK_COMPLETE' }>['data'];
-      const picked = formatItemList(d.pickedItems);
-      const outOfStock = d.outOfStockItems.length
-        ? `\n\n⚠ พัสดุหมด (ยังไม่ได้จ่าย):\n${formatItemList(d.outOfStockItems)}`
-        : '';
-      const warehouseText = `✅ จัดของใบเบิก ${d.requisitionId} เสร็จเรียบร้อย\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
-      const personalText = `📦 พัสดุของคุณจัดเสร็จแล้ว มารับได้ที่ห้องคลังสินค้า\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\nรายการที่จัดเสร็จ:\n${picked}${outOfStock}`;
-      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], warehouseText)];
-      if (d.recipientLineUserId) {
-        results.push(await sendLineToUser(d.recipientLineUserId, personalText));
-      }
-      return combineDeliveryResults(results);
-    }
-    case 'REQUISITION_REJECTED': {
-      // Phase 5 spec: notify both the warehouse group AND the requester.
-      // The warehouse keeps the void on record; the requester learns why
-      // their requisition was cancelled.
-      const d = data as Extract<NotificationPayload, { type: 'REQUISITION_REJECTED' }>['data'];
-      const warehouseText = `❌ ยกเลิกใบเบิก ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ยกเลิก:\n${formatItemList(d.items)}`;
-      const personalText = `❌ ใบเบิกของคุณถูกยกเลิก\n\nใบเบิก: ${d.requisitionId}\nผู้เบิก: ${d.recorder}\n\n📝 เหตุผล:\n${d.reason}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
-      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], warehouseText)];
-      if (d.recipientLineUserId) {
-        results.push(await sendLineToUser(d.recipientLineUserId, personalText));
-      }
-      return combineDeliveryResults(results);
     }
   }
 }
