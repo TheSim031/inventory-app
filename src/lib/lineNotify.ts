@@ -17,7 +17,12 @@ const LINE_CHANNEL_ACCESS_TOKEN =
   process.env.LINE_ACCESS_TOKEN ||
   '';
 
-export type NotificationType = 'OUT_RECORDED' | 'IN_RECORDED';
+export type NotificationType =
+  | 'OUT_RECORDED'
+  | 'IN_RECORDED'
+  | 'REQ_SUBMITTED'
+  | 'PICK_COMPLETE'
+  | 'REQ_REJECTED';
 
 type ItemEntry = { name: string; quantity: number; code?: string };
 
@@ -30,7 +35,6 @@ export type NotificationPayload =
         purpose: string;
         itemsCount: number;
         items: ItemEntry[];
-        // Optional LINE userId of the requester for personalised push.
         recipientLineUserId?: string;
       };
     }
@@ -40,6 +44,38 @@ export type NotificationPayload =
         recorder: string;
         poRef: string;
         itemsCount: number;
+      };
+    }
+  | {
+      type: 'REQ_SUBMITTED';
+      data: {
+        id: string;
+        requester: string;
+        department: string;
+        purpose: string;
+        itemsCount: number;
+        items: ItemEntry[];
+      };
+    }
+  | {
+      type: 'PICK_COMPLETE';
+      data: {
+        id: string;
+        requester: string;
+        department: string;
+        purpose: string;
+        itemsCount: number;
+        items: ItemEntry[];
+        recipientLineUserId?: string;
+      };
+    }
+  | {
+      type: 'REQ_REJECTED';
+      data: {
+        id: string;
+        requester: string;
+        department: string;
+        recipientLineUserId?: string;
       };
     };
 
@@ -334,14 +370,38 @@ function formatItemList(items: ItemEntry[]): string {
 
 /**
  * Routes each notification type to the right recipients:
- *  - OUT_RECORDED → WAREHOUSE roles + the requester (push)
- *  - IN_RECORDED  → WAREHOUSE roles (broadcast-style)
+ *  - REQ_SUBMITTED  → WAREHOUSE (new pick queue item)
+ *  - PICK_COMPLETE  → requester push
+ *  - REQ_REJECTED   → requester push
+ *  - OUT_RECORDED   → WAREHOUSE + requester (direct OUT, legacy path)
+ *  - IN_RECORDED    → WAREHOUSE
  */
 export async function sendLineNotification<T extends NotificationType>(
   type: T,
   data: Extract<NotificationPayload, { type: T }>['data'],
 ): Promise<LineDeliveryResult> {
   switch (type) {
+    case 'REQ_SUBMITTED': {
+      const d = data as Extract<NotificationPayload, { type: 'REQ_SUBMITTED' }>['data'];
+      const text = `📋 ใบเบิกใหม่รอจัดของ\nรหัส: ${d.id}\nผู้ขอ: ${d.requester}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการ:\n${formatItemList(d.items)}\n\n👉 เข้าเมนู "จัดของ" เพื่อยืนยัน`;
+      return sendLineToRoles(['WAREHOUSE'], text);
+    }
+    case 'PICK_COMPLETE': {
+      const d = data as Extract<NotificationPayload, { type: 'PICK_COMPLETE' }>['data'];
+      if (!d.recipientLineUserId) {
+        return emptyDeliveryResult();
+      }
+      const text = `✅ จัดของเสร็จแล้ว\nรหัส: ${d.id}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\n\nรายการที่จัดให้:\n${formatItemList(d.items)}`;
+      return sendLineToUser(d.recipientLineUserId, text);
+    }
+    case 'REQ_REJECTED': {
+      const d = data as Extract<NotificationPayload, { type: 'REQ_REJECTED' }>['data'];
+      if (!d.recipientLineUserId) {
+        return emptyDeliveryResult();
+      }
+      const text = `❌ ใบเบิกถูกปฏิเสธ\nรหัส: ${d.id}\nแผนก: ${d.department}\n\nกรุณาติดต่อคลังสินค้าหากมีข้อสงสัย`;
+      return sendLineToUser(d.recipientLineUserId, text);
+    }
     case 'OUT_RECORDED': {
       const d = data as Extract<NotificationPayload, { type: 'OUT_RECORDED' }>['data'];
       const text = `📤 บันทึกการเบิกออก\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการที่เบิก:\n${formatItemList(d.items)}`;

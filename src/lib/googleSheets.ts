@@ -1192,3 +1192,343 @@ export async function completeInspectionRow(args: {
     return 'ERROR';
   }
 }
+
+/* ─── Requisitions (pick queue) sheet helpers ─── */
+
+const REQUISITIONS_SHEET_NAME = 'ใบเบิกค้าง';
+const FALLBACK_REQUISITIONS_TABS = ['ใบเบิกค้าง', 'Requisitions', 'PickQueue'];
+const REQUISITIONS_RANGE = 'A:J';
+const REQUISITIONS_HEADER_ROW_INDEX = 1;
+const REQUISITIONS_DATA_START_INDEX = 2;
+
+export type RequisitionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
+export type RequisitionItem = { code: string; name: string; quantity: number };
+
+export type RequisitionRow = {
+  sheetRow: number;
+  id: string;
+  requestedAt: string;
+  requester: string;
+  department: string;
+  purpose: string;
+  items: RequisitionItem[];
+  lineUserId: string;
+  status: RequisitionStatus;
+  picker: string;
+  completedAt: string;
+};
+
+// A id | B วันที่ขอ | C ผู้ขอ | D แผนก | E วัตถุประสงค์ |
+// F รายการ (JSON) | G lineUserId | H สถานะ | I ผู้จัด | J วันที่จัด/ปฏิเสธ
+
+async function ensureRequisitionsSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_REQUISITIONS_TABS) {
+      if (tabs.includes(f)) return f;
+    }
+  }
+
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: REQUISITIONS_SHEET_NAME } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${REQUISITIONS_SHEET_NAME}!A1:J2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — ใบเบิกรอจัดของ'],
+          [
+            'รหัส',
+            'วันที่ขอ',
+            'ผู้ขอ',
+            'แผนก',
+            'วัตถุประสงค์',
+            'รายการ (JSON)',
+            'lineUserId',
+            'สถานะ',
+            'ผู้จัด',
+            'วันที่จัด/ปฏิเสธ',
+          ],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return REQUISITIONS_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureRequisitionsSheet):', error);
+    return null;
+  }
+}
+
+function normalizeRequisitionStatus(raw: string): RequisitionStatus {
+  const v = (raw || '').trim().toUpperCase();
+  if (v === 'COMPLETED' || v === 'REJECTED') return v;
+  return 'PENDING';
+}
+
+export async function readRequisitionsSheet(): Promise<RequisitionRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureRequisitionsSheet();
+  if (!tab) return null;
+
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!${REQUISITIONS_RANGE}`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readRequisitionsSheet):', error);
+    return null;
+  }
+
+  if (rawRows.length <= REQUISITIONS_HEADER_ROW_INDEX) return [];
+
+  const result: RequisitionRow[] = [];
+  for (let i = REQUISITIONS_DATA_START_INDEX; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const id = String(row[0] ?? '').trim();
+    if (!id) continue;
+    result.push({
+      sheetRow: i + 1,
+      id,
+      requestedAt: String(row[1] ?? '').trim(),
+      requester: String(row[2] ?? '').trim(),
+      department: String(row[3] ?? '').trim(),
+      purpose: String(row[4] ?? '').trim(),
+      items: safeJsonParse<RequisitionItem[]>(String(row[5] ?? ''), []),
+      lineUserId: String(row[6] ?? '').trim(),
+      status: normalizeRequisitionStatus(String(row[7] ?? '')),
+      picker: String(row[8] ?? '').trim(),
+      completedAt: String(row[9] ?? '').trim(),
+    });
+  }
+  return result;
+}
+
+export async function appendRequisitionRow(args: {
+  id: string;
+  requestedAt: string;
+  requester: string;
+  department: string;
+  purpose: string;
+  items: RequisitionItem[];
+  lineUserId: string;
+}): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureRequisitionsSheet();
+  if (!tab) return false;
+
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tab}!${REQUISITIONS_RANGE}`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [
+          [
+            args.id,
+            args.requestedAt,
+            args.requester,
+            args.department,
+            args.purpose,
+            JSON.stringify(args.items),
+            args.lineUserId,
+            'PENDING',
+            '',
+            '',
+          ],
+        ],
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (appendRequisitionRow):', error);
+    return false;
+  }
+}
+
+export type RequisitionActionResult =
+  | 'UPDATED'
+  | 'NOT_FOUND'
+  | 'ALREADY_HANDLED'
+  | 'ERROR';
+
+async function claimRequisitionStatus(
+  target: RequisitionRow,
+  tab: string,
+  replacement: 'COMPLETED' | 'REJECTED',
+): Promise<RequisitionActionResult> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return 'ERROR';
+
+  let sheetId: number;
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties(sheetId,title)',
+    });
+    const found = (meta.data.sheets || []).find((s) => s.properties?.title === tab);
+    if (typeof found?.properties?.sheetId !== 'number') return 'ERROR';
+    sheetId = found.properties.sheetId;
+  } catch (error) {
+    console.error('Google Sheets Error (claimRequisitionStatus: meta):', error);
+    return 'ERROR';
+  }
+
+  try {
+    const claim = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            findReplace: {
+              range: {
+                sheetId,
+                startRowIndex: target.sheetRow - 1,
+                endRowIndex: target.sheetRow,
+                startColumnIndex: 7,
+                endColumnIndex: 8,
+              },
+              find: 'PENDING',
+              replacement,
+              matchCase: true,
+              matchEntireCell: true,
+            },
+          },
+        ],
+      },
+    });
+    const changed =
+      claim.data.replies?.[0]?.findReplace?.occurrencesChanged ?? 0;
+    if (changed === 0) return 'ALREADY_HANDLED';
+  } catch (error) {
+    console.error('Google Sheets Error (claimRequisitionStatus):', error);
+    return 'ERROR';
+  }
+
+  return 'UPDATED';
+}
+
+export async function completeRequisitionRow(args: {
+  id: string;
+  picker: string;
+}): Promise<RequisitionActionResult> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return 'ERROR';
+  const tab = await ensureRequisitionsSheet();
+  if (!tab) return 'ERROR';
+
+  const rows = await readRequisitionsSheet();
+  if (!rows) return 'ERROR';
+  const target = rows.find((r) => r.id === args.id);
+  if (!target) return 'NOT_FOUND';
+  if (target.status !== 'PENDING') return 'ALREADY_HANDLED';
+
+  const claimed = await claimRequisitionStatus(target, tab, 'COMPLETED');
+  if (claimed !== 'UPDATED') return claimed;
+
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!I${target.sheetRow}:J${target.sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[args.picker, new Date().toISOString()]],
+      },
+    });
+    return 'UPDATED';
+  } catch (error) {
+    console.error('Google Sheets Error (completeRequisitionRow):', error);
+    return 'ERROR';
+  }
+}
+
+export async function rejectRequisitionRow(args: {
+  id: string;
+  picker: string;
+}): Promise<RequisitionActionResult> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return 'ERROR';
+  const tab = await ensureRequisitionsSheet();
+  if (!tab) return 'ERROR';
+
+  const rows = await readRequisitionsSheet();
+  if (!rows) return 'ERROR';
+  const target = rows.find((r) => r.id === args.id);
+  if (!target) return 'NOT_FOUND';
+  if (target.status !== 'PENDING') return 'ALREADY_HANDLED';
+
+  const claimed = await claimRequisitionStatus(target, tab, 'REJECTED');
+  if (claimed !== 'UPDATED') return claimed;
+
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!I${target.sheetRow}:J${target.sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[args.picker, new Date().toISOString()]],
+      },
+    });
+    return 'UPDATED';
+  } catch (error) {
+    console.error('Google Sheets Error (rejectRequisitionRow):', error);
+    return 'ERROR';
+  }
+}
+
+/** Append OUT rows to the history sheet (stock formula updates immediately). */
+export async function appendHistoryOutRows(args: {
+  recorder: string;
+  department: string;
+  purpose: string;
+  items: RequisitionItem[];
+}): Promise<{ ok: boolean; count: number }> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return { ok: false, count: 0 };
+  const SHEET_HISTORY = await resolveHistorySheetName();
+  if (!SHEET_HISTORY) return { ok: false, count: 0 };
+
+  const now = new Date().toISOString();
+  const historyValues = args.items.map((it) => [
+    now,
+    'OUT',
+    String(it.code).trim(),
+    String(it.name).trim(),
+    Math.floor(it.quantity),
+    args.recorder.trim(),
+    args.department.trim(),
+    args.purpose.trim(),
+    '',
+  ]);
+
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: historyValues },
+    });
+    return { ok: true, count: args.items.length };
+  } catch (error) {
+    console.error('Google Sheets Error (appendHistoryOutRows):', error);
+    return { ok: false, count: 0 };
+  }
+}

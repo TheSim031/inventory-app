@@ -212,12 +212,11 @@ export default function RequestPage() {
     }));
 
     try {
-      const res = await fetch('/api/history', {
+      const res = await fetch('/api/requisitions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'OUT',
-          recorder: form.requester_name.trim(),
+          requester: form.requester_name.trim(),
           department: resolvedDepartment,
           purpose: form.purpose.trim(),
           items: cartItems,

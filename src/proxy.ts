@@ -39,8 +39,10 @@ const RULES: Rule[] = [
   // (so the more-specific path wins the first-match).
   { match: (p) => p === '/inspect' || p.startsWith('/inspect/'), allowed: ['QC'] },
 
-  // Warehouse pages (V7: /out was deleted along with the approval flow).
   { match: (p) => p === '/in' || p.startsWith('/in/'), allowed: ['WAREHOUSE'] },
+
+  // Pick queue — warehouse fulfills pending requisitions.
+  { match: (p) => p === '/pick' || p.startsWith('/pick/'), allowed: ['WAREHOUSE'] },
 
   // Limit Stock — Warehouse + Purchasing can view/edit.
   {

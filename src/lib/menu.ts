@@ -26,6 +26,7 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: '📦',
     children: [
       { id: 'in', label: 'บันทึกรับของ', href: '/in', icon: '📥' },
+      { id: 'pick', label: 'จัดของ', href: '/pick', icon: '📋' },
       { id: 'request', label: 'ใบเบิกสินค้า', href: '/request', icon: '📝' },
       { id: 'limit-stock', label: 'Limit Stock', href: '/limit-stock', icon: '🚨' },
     ],
@@ -62,14 +63,14 @@ export const MENU_ITEMS: MenuItem[] = [
  * ID OR any of its children IDs are in the list.
  *
  * Rules from the spec (unchanged in scope, restructured under new parents):
- *   WAREHOUSE  : คลัง (รับของ + เบิก + Limit Stock) + ประวัติตรวจสอบ
+ *   WAREHOUSE  : คลัง (รับของ + จัดของ + เบิก + Limit Stock) + ประวัติตรวจสอบ
  *   PURCHASING : คลัง (เบิก + Limit Stock) + ประวัติตรวจสอบ
  *   EXECUTIVE  : ประวัติตรวจสอบ
  *   QC         : ตรวจสอบรับเข้า + ประวัติตรวจสอบ
  *   ASSEMBLY   : คลัง (เบิก)
  */
 export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
-  WAREHOUSE:  ['warehouse', 'in', 'request', 'limit-stock', 'inspect', 'inspect-history'],
+  WAREHOUSE:  ['warehouse', 'in', 'pick', 'request', 'limit-stock', 'inspect', 'inspect-history'],
   PURCHASING: ['warehouse', 'request', 'limit-stock', 'inspect', 'inspect-history'],
   EXECUTIVE:  ['inspect', 'inspect-history'],
   QC:         ['inspect', 'inspect-do', 'inspect-history'],

@@ -777,7 +777,7 @@ input, textarea, select {
   filter: none;
 }
 
-/* ─── Print styles (used by /out/[id] pick page) ─── */
+/* ─── Print styles (used by /pick/[id] pick slip) ─── */
 @media print {
   /* Hide global chrome when printing */
   .company-header,
