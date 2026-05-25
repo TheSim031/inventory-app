@@ -26,7 +26,7 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: '📦',
     children: [
       { id: 'in', label: 'บันทึกรับของ', href: '/in', icon: '📥' },
-      { id: 'pick', label: 'จัดของ', href: '/pick', icon: '📋' },
+      { id: 'pick', label: 'จัดของ', href: '/out', icon: '📋' },
       { id: 'request', label: 'ใบเบิกสินค้า', href: '/request', icon: '📝' },
       { id: 'limit-stock', label: 'Limit Stock', href: '/limit-stock', icon: '🚨' },
     ],

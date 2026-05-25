@@ -41,7 +41,9 @@ const RULES: Rule[] = [
 
   { match: (p) => p === '/in' || p.startsWith('/in/'), allowed: ['WAREHOUSE'] },
 
-  // Pick queue — warehouse fulfills pending requisitions.
+  // Pick queue — warehouse fulfills pending requisitions at /out.
+  { match: (p) => p === '/out' || p.startsWith('/out/'), allowed: ['WAREHOUSE'] },
+  // Legacy /pick URLs redirect to /out.
   { match: (p) => p === '/pick' || p.startsWith('/pick/'), allowed: ['WAREHOUSE'] },
 
   // Limit Stock — Warehouse + Purchasing can view/edit.

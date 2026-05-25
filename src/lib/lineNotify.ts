@@ -66,6 +66,7 @@ export type NotificationPayload =
         purpose: string;
         itemsCount: number;
         items: ItemEntry[];
+        outOfStockItems?: ItemEntry[];
         recipientLineUserId?: string;
       };
     }
@@ -75,6 +76,7 @@ export type NotificationPayload =
         id: string;
         requester: string;
         department: string;
+        reason?: string;
         recipientLineUserId?: string;
       };
     };
@@ -383,7 +385,7 @@ export async function sendLineNotification<T extends NotificationType>(
   switch (type) {
     case 'REQ_SUBMITTED': {
       const d = data as Extract<NotificationPayload, { type: 'REQ_SUBMITTED' }>['data'];
-      const text = `📋 ใบเบิกใหม่รอจัดของ\nรหัส: ${d.id}\nผู้ขอ: ${d.requester}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการ:\n${formatItemList(d.items)}\n\n👉 เข้าเมนู "จัดของ" เพื่อยืนยัน`;
+      const text = `📋 ใบเบิกใหม่รอจัดของ\nรหัส: ${d.id}\nผู้ขอ: ${d.requester}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการ:\n${formatItemList(d.items)}\n\n👉 เข้าเมนู "จัดของ" (/out) เพื่อยืนยัน`;
       return sendLineToRoles(['WAREHOUSE'], text);
     }
     case 'PICK_COMPLETE': {
@@ -391,7 +393,15 @@ export async function sendLineNotification<T extends NotificationType>(
       if (!d.recipientLineUserId) {
         return emptyDeliveryResult();
       }
-      const text = `✅ จัดของเสร็จแล้ว\nรหัส: ${d.id}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\n\nรายการที่จัดให้:\n${formatItemList(d.items)}`;
+      const outBlock =
+        d.outOfStockItems && d.outOfStockItems.length > 0
+          ? `\n\nไม่จัด (พัสดุหมด):\n${formatItemList(d.outOfStockItems)}`
+          : '';
+      const pickedBlock =
+        d.items.length > 0
+          ? `รายการที่จัดให้:\n${formatItemList(d.items)}`
+          : 'ไม่มีรายการที่ตัดสต็อก (ทุกรายการพัสดุหมด)';
+      const text = `✅ จัดของเสร็จแล้ว\nรหัส: ${d.id}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\n\n${pickedBlock}${outBlock}`;
       return sendLineToUser(d.recipientLineUserId, text);
     }
     case 'REQ_REJECTED': {
@@ -399,7 +409,8 @@ export async function sendLineNotification<T extends NotificationType>(
       if (!d.recipientLineUserId) {
         return emptyDeliveryResult();
       }
-      const text = `❌ ใบเบิกถูกปฏิเสธ\nรหัส: ${d.id}\nแผนก: ${d.department}\n\nกรุณาติดต่อคลังสินค้าหากมีข้อสงสัย`;
+      const reasonBlock = d.reason ? `\nเหตุผล: ${d.reason}` : '';
+      const text = `❌ ใบเบิกถูกปฏิเสธ\nรหัส: ${d.id}\nแผนก: ${d.department}${reasonBlock}\n\nกรุณาติดต่อคลังสินค้าหากมีข้อสงสัย`;
       return sendLineToUser(d.recipientLineUserId, text);
     }
     case 'OUT_RECORDED': {
