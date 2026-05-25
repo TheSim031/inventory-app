@@ -365,6 +365,28 @@ function colIndexToLetter(idx: number): string {
   return s;
 }
 
+/**
+ * Canonical stock parser — used everywhere a stock cell is read so that the
+ * value stored in app state and the value compared in CAS always come from
+ * the same logic. Accepts:
+ *   - numbers (UNFORMATTED_VALUE)         → truncated to integer
+ *   - "1,093" (FORMATTED_VALUE)           → 1093
+ *   - "" / "-" (sheet "no stock recorded") → 0
+ * Negatives clamp to 0; non-numeric returns 0.
+ */
+function parseStockValue(v: unknown): number {
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return Math.trunc(v);
+  }
+  const raw = String(v ?? '').trim();
+  if (raw === '' || raw === '-') return 0;
+  const cleaned = raw.replace(/,/g, '');
+  const n = parseInt(cleaned, 10);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
 function findHeaderIndex(headers: string[], candidates: string[]): number {
   const lowered = headers.map((h) => h.trim().toLowerCase());
   // exact match first
@@ -441,16 +463,6 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const sIdx = stockIdx >= 0 ? stockIdx : 3;
   const stIdx = statusIdx >= 0 ? statusIdx : 4;
 
-  // Parse stock: strip thousands separators, treat plain "-" / blank as 0,
-  // clamp negatives to 0 (the sheet uses "-" to mean "no stock recorded").
-  const parseStock = (v: unknown): number => {
-    const raw = String(v ?? '').trim();
-    if (raw === '' || raw === '-') return 0;
-    const cleaned = raw.replace(/,/g, '');
-    const n = parseInt(cleaned, 10);
-    if (!Number.isFinite(n) || n < 0) return 0;
-    return n;
-  };
 
   // A row is a "category separator" (e.g. "▌ BUSH" in col A, other cells blank)
   // when its display fields are empty or start with the ▌ marker. Skip those
@@ -476,7 +488,7 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
       code,
       name,
       category,
-      stock: parseStock(row[sIdx]),
+      stock: parseStockValue(row[sIdx]),
       status: String(row[stIdx] ?? '').trim(),
     });
   }
@@ -529,15 +541,6 @@ export async function compareAndSetStockCells(args: {
     (c) => `${args.sheetName}!${args.stockColLetter}${c.rowNumber}`,
   );
 
-  const parseCell = (v: unknown): number | null => {
-    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-    const raw = String(v ?? '').trim();
-    if (raw === '' || raw === '-') return 0;
-    const cleaned = raw.replace(/,/g, '');
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : null;
-  };
-
   try {
     const read = await sheets.spreadsheets.values.batchGet({
       spreadsheetId,
@@ -548,17 +551,25 @@ export async function compareAndSetStockCells(args: {
     const valueRanges = read.data.valueRanges ?? [];
     for (let i = 0; i < changes.length; i++) {
       const change = changes[i];
-      const cell = valueRanges[i]?.values?.[0]?.[0];
-      const current = parseCell(cell);
-      if (current === null || current !== change.expectedStock) {
+      const rawCell = valueRanges[i]?.values?.[0]?.[0];
+      const current = parseStockValue(rawCell);
+      if (current !== change.expectedStock) {
+        console.error('[CAS conflict]', {
+          code: change.code,
+          range: ranges[i],
+          expectedStock: change.expectedStock,
+          parsedCurrent: current,
+          rawCell,
+          rawCellType: typeof rawCell,
+        });
         return {
           ok: false,
           status: 409,
           conflictCode: change.code,
-          currentStock: current ?? undefined,
+          currentStock: current,
           error:
             `สต็อก "${change.name}" (${change.code}) ถูกเปลี่ยนโดยรายการอื่นระหว่างบันทึก ` +
-            `(ตอนเริ่ม ${change.expectedStock}, ตอนนี้ ${current ?? 'อ่านไม่ได้'}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
+            `(ตอนเริ่ม ${change.expectedStock}, ตอนนี้ ${current}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
         };
       }
     }
