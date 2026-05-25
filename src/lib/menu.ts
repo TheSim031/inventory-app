@@ -19,13 +19,15 @@ export type MenuItem = {
  * is visible to that role.
  */
 export const MENU_ITEMS: MenuItem[] = [
+  // "จัดของ" (/out) was removed in V7 — the approval flow was deleted
+  // when Sheet 2 lost its status/requisitionId columns. Stock moves
+  // happen directly via /in (warehouse receive) and /request (user issue).
   {
     id: 'warehouse',
     label: 'คลัง',
     icon: '📦',
     children: [
       { id: 'in', label: 'รับของ', href: '/in', icon: '📥' },
-      { id: 'out', label: 'จัดของ', href: '/out', icon: '📤' },
     ],
   },
   { id: 'request', label: 'เบิก', href: '/request', icon: '📝' },
@@ -53,7 +55,7 @@ export const MENU_ITEMS: MenuItem[] = [
  *   ASSEMBLY   : "เบิก"
  */
 export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
-  WAREHOUSE:  ['warehouse', 'in', 'out', 'request', 'inspect-history'],
+  WAREHOUSE:  ['warehouse', 'in', 'request', 'inspect-history'],
   PURCHASING: ['request', 'inspect-history'],
   EXECUTIVE:  ['inspect-history'],
   QC:         ['inspect', 'inspect-history'],

@@ -1,12 +1,9 @@
 import {
   getSheets,
-  readItemsSheet,
   readHistorySheet,
-  resolveItemsSheetName,
   resolveHistorySheetName,
   HISTORY_RANGE,
-  compareAndSetStockCells,
-  type StockCellChange,
+  type HistoryType,
 } from '@/lib/googleSheets';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
@@ -14,9 +11,6 @@ import { requireAuth, requireRoles } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-type HistoryType = 'IN' | 'OUT';
-type HistoryStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
 
 type HistoryItemInput = {
   code: string;
@@ -30,9 +24,6 @@ type HistoryPostBody = {
   department?: string;
   purpose?: string;
   poRef?: string;
-  // Filled automatically from LINE session cookie when present — do not
-  // trust client-supplied values here, the server overrides from cookie.
-  lineUserId?: string;
   items: HistoryItemInput[];
 };
 
@@ -46,17 +37,7 @@ export type HistoryEntry = {
   department: string;
   purpose: string;
   poRef: string;
-  requisitionId: string;
-  status: HistoryStatus;
 };
-
-function normalizeStatus(raw: string): HistoryStatus {
-  const v = raw.trim().toUpperCase();
-  if (v === 'PENDING' || v === 'COMPLETED' || v === 'REJECTED') return v;
-  // Legacy/blank rows: assume they were already completed under the previous
-  // auto-deduct logic so they don't reappear in the pending queue.
-  return 'COMPLETED';
-}
 
 export async function GET(request: NextRequest) {
   const denied = requireAuth(request);
@@ -76,8 +57,6 @@ export async function GET(request: NextRequest) {
       department: r.department,
       purpose: r.purpose,
       poRef: r.poRef,
-      requisitionId: r.requisitionId,
-      status: normalizeStatus(r.status),
     }));
 
     return NextResponse.json(entries.reverse()); // newest first
@@ -87,6 +66,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Append a movement row to the history sheet. NEVER writes to the stock
+ * sheet — Sheet 1 column D is a SUMIFS formula that recomputes itself
+ * whenever a new row lands here.
+ *
+ * - type=IN  → warehouse received goods (must be WAREHOUSE role)
+ * - type=OUT → user requested issue (WAREHOUSE / PURCHASING / ASSEMBLY)
+ *
+ * The OPEN type is reserved for the human-seeded opening balances in the
+ * sheet and is not exposed through this endpoint.
+ */
 export async function POST(request: NextRequest) {
   let body: Partial<HistoryPostBody>;
   try {
@@ -108,16 +98,14 @@ export async function POST(request: NextRequest) {
   if (denied) return denied;
 
   const { sheets, spreadsheetId } = getSheets();
-
   if (!sheets || !spreadsheetId) {
     return NextResponse.json({ error: 'Google Sheets API not configured' }, { status: 503 });
   }
 
-  const SHEET_ITEMS = await resolveItemsSheetName();
   const SHEET_HISTORY = await resolveHistorySheetName();
-  if (!SHEET_ITEMS || !SHEET_HISTORY) {
+  if (!SHEET_HISTORY) {
     return NextResponse.json(
-      { error: 'ไม่พบ tab ที่ตรงในสเปรดชีต — ตรวจ env GOOGLE_SHEET_ITEMS / GOOGLE_SHEET_HISTORY' },
+      { error: 'ไม่พบ tab ประวัติเข้า-ออก — ตรวจ env GOOGLE_SHEET_HISTORY' },
       { status: 500 },
     );
   }
@@ -136,7 +124,6 @@ export async function POST(request: NextRequest) {
   if (type === 'IN' && !poRef?.trim()) {
     return NextResponse.json({ error: 'การรับเข้า (IN) ต้องระบุรหัส PO/PX' }, { status: 400 });
   }
-
   for (const it of items) {
     if (!it.code || !it.name || !Number.isFinite(it.quantity) || it.quantity <= 0) {
       return NextResponse.json(
@@ -148,67 +135,32 @@ export async function POST(request: NextRequest) {
 
   try {
     const now = new Date().toISOString();
-    const requisitionId =
-      type === 'OUT' ? `REQ-${Date.now()}` : `IN-${Date.now()}`;
-    const status: HistoryStatus = type === 'IN' ? 'COMPLETED' : 'PENDING';
 
-    // IN (Receive Goods) → validate items + add stock immediately.
-    // OUT (requisition) → DO NOT touch stock; warehouse approval handles deduction.
-    if (type === 'IN') {
-      const schema = await readItemsSheet();
-      if (!schema) {
-        return NextResponse.json({ error: 'อ่านตารางสต็อกไม่ได้' }, { status: 500 });
-      }
-      const stockIndex = new Map<string, { rowNumber: number; currentStock: number }>();
-      for (const r of schema.rows) {
-        stockIndex.set(r.code, { rowNumber: r.rowNumber, currentStock: r.stock });
-      }
+    // 9-column row matching Sheet 2 headers:
+    //   A วันที่ | B ประเภท | C รหัส | D ชื่อ | E จำนวน |
+    //   F ผู้บันทึก | G แผนก (OUT) | H วัตถุประสงค์ (OUT) | I PO/PX (IN)
+    const historyValues = items.map((it) => [
+      now,
+      type,
+      String(it.code).trim(),
+      String(it.name).trim(),
+      Math.floor(it.quantity),
+      recorder.trim(),
+      type === 'OUT' ? (department || '').trim() : '',
+      type === 'OUT' ? (purpose || '').trim() : '',
+      type === 'IN' ? (poRef || '').trim() : '',
+    ]);
 
-      const stockChanges = new Map<
-        string,
-        StockCellChange & { currentBaseStock: number }
-      >();
-      for (const it of items) {
-        const entry = stockIndex.get(it.code);
-        if (!entry) {
-          const message = `ไม่พบรหัสสินค้า "${it.code}" (${it.name}) ในสต็อก`;
-          sendLineNotification('OUT_OF_STOCK', { recorder, message })
-            .then((delivery) => {
-              if (!delivery.ok) console.error('LINE delivery failed (OUT_OF_STOCK):', delivery);
-            })
-            .catch(console.error);
-          return NextResponse.json({ error: message }, { status: 400 });
-        }
-        const existing = stockChanges.get(it.code);
-        const baseStock = existing?.currentBaseStock ?? entry.currentStock;
-        stockChanges.set(it.code, {
-          code: it.code,
-          name: it.name,
-          rowNumber: entry.rowNumber,
-          expectedStock: entry.currentStock,
-          currentBaseStock: baseStock + it.quantity,
-          nextStock: baseStock + it.quantity,
-        });
-      }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: historyValues },
+    });
 
-      const stockResult = await compareAndSetStockCells({
-        sheetName: SHEET_ITEMS,
-        stockColLetter: schema.stockColLetter,
-        changes: Array.from(stockChanges.values()).map((change) => ({
-          code: change.code,
-          name: change.name,
-          rowNumber: change.rowNumber,
-          expectedStock: change.expectedStock,
-          nextStock: change.nextStock,
-        })),
-      });
-      if (!stockResult.ok) {
-        return NextResponse.json({ error: stockResult.error }, { status: stockResult.status });
-      }
-    }
-
-    // Read lineUserId from the LINE session cookie (server-trusted) so the
-    // requester can be push-notified later when their pick is done.
+    // lineUserId is read from the session cookie at notification time only —
+    // it is no longer persisted in the sheet (the column was removed in V7).
     const lineUserId = (() => {
       const raw = request.cookies.get('line_user')?.value;
       if (!raw) return '';
@@ -219,33 +171,6 @@ export async function POST(request: NextRequest) {
         return '';
       }
     })();
-
-    // Append history rows. Columns:
-    //   A วันที่ | B ประเภท | C รหัสรายการ | D ชื่อรายการ | E จำนวน |
-    //   F ชื่อผู้บันทึก | G แผนก | H วัตถุประสงค์ | I รหัส PO/PX |
-    //   J requisitionId | K status | L lineUserId   (J/K/L are system cols)
-    const historyValues = items.map((it) => [
-      now,
-      type,
-      it.code,
-      it.name,
-      it.quantity,
-      recorder.trim(),
-      type === 'OUT' ? (department || '').trim() : '',
-      type === 'OUT' ? (purpose || '').trim() : '',
-      type === 'IN' ? (poRef || '').trim() : '',
-      requisitionId,
-      status,
-      lineUserId,
-    ]);
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${SHEET_HISTORY}!${HISTORY_RANGE}`,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: historyValues },
-    });
 
     if (type === 'OUT') {
       sendLineNotification('OUT_RECORDED', {
@@ -277,7 +202,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: true, count: items.length, requisitionId, status },
+      { success: true, count: items.length, type },
       { status: 201 },
     );
   } catch (err) {

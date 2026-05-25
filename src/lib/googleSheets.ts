@@ -499,124 +499,40 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   };
 }
 
-export type StockCellChange = {
-  code: string;
-  name: string;
-  rowNumber: number;
-  expectedStock: number;
-  nextStock: number;
-};
-
-export type StockCompareSetResult =
-  | { ok: true }
-  | {
-      ok: false;
-      status: number;
-      error: string;
-      conflictCode?: string;
-      currentStock?: number;
-    };
-
-/**
- * Optimistic compare-and-set for stock cells. Google Sheets has no native
- * transaction, so we read each target cell raw (UNFORMATTED_VALUE — bypasses
- * thousand-separator / formula display) and only write when every cell still
- * equals the value the caller saw. The read→write gap is a few hundred ms in
- * the same request handler, which is acceptable for this app's traffic.
- */
-export async function compareAndSetStockCells(args: {
-  sheetName: string;
-  stockColLetter: string;
-  changes: StockCellChange[];
-}): Promise<StockCompareSetResult> {
-  if (args.changes.length === 0) return { ok: true };
-
-  const { sheets, spreadsheetId } = getSheetsClient();
-  if (!sheets || !spreadsheetId) {
-    return { ok: false, status: 503, error: 'Google Sheets API not configured' };
-  }
-
-  const changes = [...args.changes].sort((a, b) => a.rowNumber - b.rowNumber);
-  const ranges = changes.map(
-    (c) => `${args.sheetName}!${args.stockColLetter}${c.rowNumber}`,
-  );
-
-  try {
-    const read = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId,
-      ranges,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-
-    const valueRanges = read.data.valueRanges ?? [];
-    for (let i = 0; i < changes.length; i++) {
-      const change = changes[i];
-      const rawCell = valueRanges[i]?.values?.[0]?.[0];
-      const current = parseStockValue(rawCell);
-      if (current !== change.expectedStock) {
-        console.error('[CAS conflict]', {
-          code: change.code,
-          range: ranges[i],
-          expectedStock: change.expectedStock,
-          parsedCurrent: current,
-          rawCell,
-          rawCellType: typeof rawCell,
-        });
-        return {
-          ok: false,
-          status: 409,
-          conflictCode: change.code,
-          currentStock: current,
-          error:
-            `สต็อก "${change.name}" (${change.code}) ถูกเปลี่ยนโดยรายการอื่นระหว่างบันทึก ` +
-            `(ตอนเริ่ม ${change.expectedStock}, ตอนนี้ ${current}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
-        };
-      }
-    }
-
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        valueInputOption: 'USER_ENTERED',
-        data: changes.map((change) => ({
-          range: `${args.sheetName}!${args.stockColLetter}${change.rowNumber}`,
-          values: [[change.nextStock]],
-        })),
-      },
-    });
-
-    return { ok: true };
-  } catch (error) {
-    console.error('Google Sheets Error (compareAndSetStockCells):', error);
-    return { ok: false, status: 500, error: 'อัปเดตสต็อกไม่สำเร็จ' };
-  }
-}
-
 /* ─── History sheet helpers ─── */
 
 /**
- * History sheet ("ประวัติเข้า-ออก") layout:
+ * History sheet ("ประวัติเข้า-ออก") layout — UPDATED for V7 (May 2026).
+ *
  *   Row 1   — title row, skipped
- *   Row 2   — headers: วันที่ | ประเภท | รหัสรายการ | ชื่อรายการ | จำนวน |
- *             ชื่อผู้บันทึก | แผนก (OUT) | วัตถุประสงค์ (OUT) | รหัส PO/PX (IN)
- *             plus internal cols J=requisitionId, K=status, L=lineUserId
- *             (J/K/L are used by the approval flow — feel free to label
- *             them in the sheet)
+ *   Row 2   — headers (9 columns A–I):
+ *             A วันที่ | B ประเภท | C รหัสรายการ | D ชื่อรายการ |
+ *             E จำนวน | F ชื่อผู้บันทึก | G แผนก (OUT) |
+ *             H วัตถุประสงค์ (OUT) | I รหัส PO/PX (IN)
  *   Row 3+  — entries
  *
- * Note: column L (lineUserId) was added when LINE Login was wired up.
- * Legacy rows have it blank, which is fine — push falls back to broadcast.
+ * Type column accepts: OPEN | IN | OUT.
+ *   OPEN = ยอดยกมา (opening balance), seeded once per item.
+ *   IN   = รับเข้า (warehouse received goods).
+ *   OUT  = เบิกออก (issued/requested by user).
+ *
+ * Stock balance is NOT stored in this sheet. Sheet 1 column D has a
+ * formula: SUMIFS(qty, code, OPEN) + SUMIFS(qty, code, IN) - SUMIFS(qty, code, OUT).
+ * The app must ONLY APPEND rows here; never write to Sheet 1.
+ *
+ * Old internal columns J/K/L (requisitionId / status / lineUserId) were
+ * removed in V7 — the per-row approval flow is gone, /request now writes
+ * an OUT row directly which the formula sees immediately.
  */
 const HISTORY_HEADER_ROW_INDEX = 1; // sheet row 2
 const HISTORY_DATA_START_INDEX = 2; // sheet row 3
-export const HISTORY_RANGE = 'A:L';
-export const HISTORY_STATUS_COL = 'K';
-export const HISTORY_LINE_USER_COL = 'L';
+export const HISTORY_RANGE = 'A:I';
+export type HistoryType = 'OPEN' | 'IN' | 'OUT';
 
 export type HistoryRow = {
   sheetRow: number; // 1-based
   date: string;
-  type: 'IN' | 'OUT';
+  type: HistoryType;
   code: string;
   name: string;
   quantity: number;
@@ -624,10 +540,15 @@ export type HistoryRow = {
   department: string;
   purpose: string;
   poRef: string;
-  requisitionId: string;
-  status: string; // raw value — callers may normalize
-  lineUserId: string; // optional — empty for legacy rows
 };
+
+function normalizeHistoryType(raw: unknown): HistoryType {
+  const v = String(raw ?? '').trim().toUpperCase();
+  if (v === 'IN' || v === 'OUT' || v === 'OPEN') return v;
+  // Legacy rows pre-V7 used blank or other markers — treat as OUT so they
+  // still count against stock (safer than dropping them).
+  return 'OUT';
+}
 
 export async function readHistorySheet(): Promise<HistoryRow[] | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
@@ -660,17 +581,14 @@ export async function readHistorySheet(): Promise<HistoryRow[] | null> {
     result.push({
       sheetRow: i + 1,
       date,
-      type: row[1] === 'IN' ? 'IN' : 'OUT',
+      type: normalizeHistoryType(row[1]),
       code: String(row[2] ?? ''),
       name: String(row[3] ?? ''),
-      quantity: parseInt(String(row[4] ?? '0'), 10) || 0,
+      quantity: parseInt(String(row[4] ?? '0').replace(/,/g, ''), 10) || 0,
       recorder: String(row[5] ?? ''),
       department: String(row[6] ?? ''),
       purpose: String(row[7] ?? ''),
       poRef: String(row[8] ?? ''),
-      requisitionId: String(row[9] ?? ''),
-      status: String(row[10] ?? ''),
-      lineUserId: String(row[11] ?? '').trim(),
     });
   }
   return result;

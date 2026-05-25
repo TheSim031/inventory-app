@@ -30,9 +30,11 @@ const RULES: Rule[] = [
   // (so the more-specific path wins the first-match).
   { match: (p) => p === '/inspect' || p.startsWith('/inspect/'), allowed: ['QC'] },
 
-  // Warehouse pages
+  // Warehouse pages. /out was removed in V7 (approval flow deleted) — keep
+  // a rule with an empty allow-list so any deep-link still gets routed to
+  // /403 rather than rendering a stale UI that calls a 410 endpoint.
   { match: (p) => p === '/in' || p.startsWith('/in/'), allowed: ['WAREHOUSE'] },
-  { match: (p) => p === '/out' || p.startsWith('/out/'), allowed: ['WAREHOUSE'] },
+  { match: (p) => p === '/out' || p.startsWith('/out/'), allowed: [] },
 
   // Requisition (เบิก) — warehouse fulfills, purchasing/assembly request.
   {
