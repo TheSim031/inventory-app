@@ -84,6 +84,7 @@ export type DriveFailureReason =
   | 'NOT_CONFIGURED'        // service account env missing
   | 'API_DISABLED'          // Drive API not enabled in GCP project
   | 'AUTH_DENIED'           // 401/403 from Drive
+  | 'STORAGE_QUOTA'         // SA uploading into a non-Shared-Drive folder
   | 'PERMISSION_GRANT_FAIL' // file uploaded but couldn't be made link-viewable
   | 'UNKNOWN';
 
@@ -120,6 +121,18 @@ function logDriveError(stage: string, error: unknown): void {
   if (e?.stack) console.error(`Google Drive Error stack (${stage}):`, e.stack);
 }
 
+function extractApiReasons(error: unknown): string[] {
+  const e = error as {
+    errors?: Array<{ reason?: string; message?: string }>;
+    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
+  } | null;
+  const reasons: string[] = [];
+  for (const r of e?.errors || []) if (r?.reason) reasons.push(r.reason);
+  for (const r of e?.response?.data?.error?.errors || [])
+    if (r?.reason) reasons.push(r.reason);
+  return reasons;
+}
+
 function classifyDriveError(error: unknown): {
   reason: DriveFailureReason;
   detail?: string;
@@ -131,27 +144,53 @@ function classifyDriveError(error: unknown): {
       ? error
       : '';
   const lower = msg.toLowerCase();
+  const apiReasons = extractApiReasons(error).map((r) => r.toLowerCase());
+
   if (
     lower.includes('drive api has not been used') ||
     lower.includes('api drive.googleapis.com') ||
-    lower.includes('it is disabled')
+    lower.includes('it is disabled') ||
+    apiReasons.includes('accessnotconfigured')
   ) {
     return { reason: 'API_DISABLED', detail: ENABLE_DRIVE_API_HINT };
   }
+
+  // The classic Service-Account-in-MyDrive trap. SAs have zero storage
+  // quota of their own, so uploading INTO a folder that lives inside a
+  // human's My Drive (not a Shared Drive) fails with this exact reason.
+  // The fix is structural: move the folder to a Shared Drive (or use
+  // domain-wide delegation), not "share again with the SA".
+  if (
+    apiReasons.includes('storagequotaexceeded') ||
+    lower.includes('storage quota') ||
+    lower.includes('service accounts do not have storage')
+  ) {
+    return {
+      reason: 'STORAGE_QUOTA',
+      detail:
+        'Service Account ไม่มี storage quota ของตัวเอง — โฟลเดอร์ GOOGLE_DRIVE_FOLDER_ID ' +
+        'ต้องอยู่ใน Shared Drive (Drive ขององค์กร) ไม่ใช่ My Drive ของคน. ' +
+        'วิธีแก้: สร้าง Shared Drive, ย้ายโฟลเดอร์เข้าไป, แชร์ Shared Drive ให้ SA เป็น Content Manager+',
+    };
+  }
+
   // googleapis sets .code (and sometimes .response.status) on API errors.
   const code = (error as { code?: number | string; response?: { status?: number } } | null)
     ?.code;
   const status = (error as { response?: { status?: number } } | null)?.response?.status;
+
   // Insufficient scope often comes back as 403 with a body that includes
   // "insufficientPermissions" or "insufficient authentication scopes".
   if (
-    lower.includes('insufficient') &&
-    (lower.includes('scope') || lower.includes('permission'))
+    apiReasons.includes('insufficientpermissions') ||
+    apiReasons.includes('insufficientscopes') ||
+    (lower.includes('insufficient') &&
+      (lower.includes('scope') || lower.includes('permission')))
   ) {
     return {
       reason: 'AUTH_DENIED',
       detail:
-        'OAuth scope ไม่พอ — ต้องใช้ https://www.googleapis.com/auth/drive (ขณะนี้แก้แล้วใน source — ต้อง redeploy)',
+        'OAuth scope ไม่พอ — ต้องใช้ https://www.googleapis.com/auth/drive (แก้ใน source แล้ว — ตรวจว่า Vercel redeploy เสร็จจริง)',
     };
   }
   if (code === 401 || code === 403 || status === 401 || status === 403) {
@@ -159,7 +198,8 @@ function classifyDriveError(error: unknown): {
       reason: 'AUTH_DENIED',
       detail:
         'service account ไม่มีสิทธิ์ — ตรวจว่า (1) แชร์โฟลเดอร์ GOOGLE_DRIVE_FOLDER_ID ให้ ' +
-        '<GOOGLE_SERVICE_ACCOUNT_EMAIL> เป็น Editor แล้ว และ (2) Drive API เปิดอยู่ใน GCP project เดียวกับ SA',
+        '<GOOGLE_SERVICE_ACCOUNT_EMAIL> เป็น Editor แล้ว, (2) Drive API เปิดอยู่ใน GCP project เดียวกับ SA, ' +
+        'และ (3) Workspace ขององค์กรไม่ได้บล็อก external sharing',
     };
   }
   if (code === 404 || status === 404) {
@@ -255,11 +295,21 @@ export async function uploadImageToDrive(args: {
     } catch (delErr) {
       logDriveError('files.delete (rollback)', delErr);
     }
+    // Critical: this failure happens AFTER files.create already succeeded,
+    // so it is NEVER an "SA can't see Drive" problem — passing 403 through
+    // as AUTH_DENIED here was producing the misleading
+    // "service account ไม่มีสิทธิ์เข้า Drive" toast even when the actual
+    // cause was a Workspace policy blocking "anyone with link". Always
+    // surface this stage as PERMISSION_GRANT_FAIL with the raw detail.
     const classified = classifyDriveError(permErr);
+    const rawMsg =
+      permErr instanceof Error ? permErr.message : String(permErr ?? '');
     return {
       ok: false,
-      reason: classified.reason === 'UNKNOWN' ? 'PERMISSION_GRANT_FAIL' : classified.reason,
-      detail: classified.detail || 'ตั้งสิทธิ์ share ไฟล์ไม่สำเร็จ — ตรวจ Workspace sharing policy',
+      reason: 'PERMISSION_GRANT_FAIL',
+      detail:
+        `อัปโหลดไฟล์ Drive สำเร็จ แต่ตั้งสิทธิ์ "anyone with link" ไม่ได้ ` +
+        `— ${classified.detail || rawMsg || 'อาจเป็น Workspace sharing policy ขององค์กร'}`,
     };
   }
 

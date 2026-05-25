@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
       NOT_CONFIGURED: 'Google Drive ยังไม่ได้ตั้งค่าใน server',
       API_DISABLED: 'Google Drive API ยังไม่ได้เปิดใน Google Cloud project',
       AUTH_DENIED: 'service account ไม่มีสิทธิ์เข้า Drive',
+      STORAGE_QUOTA: 'Service Account ไม่มีโควต้าเก็บไฟล์ — โฟลเดอร์ต้องอยู่ใน Shared Drive',
       PERMISSION_GRANT_FAIL: 'อัปโหลดไฟล์ได้ แต่ตั้งสิทธิ์แชร์ไม่สำเร็จ',
       UNKNOWN: 'อัปโหลด Drive ไม่สำเร็จ',
     };
