@@ -365,34 +365,6 @@ function colIndexToLetter(idx: number): string {
   return s;
 }
 
-function colLetterToIndex(letter: string): number {
-  let n = 0;
-  for (const ch of letter.toUpperCase()) {
-    const code = ch.charCodeAt(0);
-    if (code < 65 || code > 90) continue;
-    n = n * 26 + (code - 64);
-  }
-  return Math.max(0, n - 1);
-}
-
-async function getSheetIdByTitle(title: string): Promise<number | null> {
-  const { sheets, spreadsheetId } = getSheetsClient();
-  if (!sheets || !spreadsheetId) return null;
-  try {
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId,
-      fields: 'sheets.properties(sheetId,title)',
-    });
-    const found = (meta.data.sheets || []).find(
-      (s) => s.properties?.title === title,
-    );
-    return found?.properties?.sheetId ?? null;
-  } catch (error) {
-    console.error('Google Sheets Error (getSheetIdByTitle):', error);
-    return null;
-  }
-}
-
 function findHeaderIndex(headers: string[], candidates: string[]): number {
   const lowered = headers.map((h) => h.trim().toLowerCase());
   // exact match first
@@ -535,9 +507,10 @@ export type StockCompareSetResult =
 
 /**
  * Optimistic compare-and-set for stock cells. Google Sheets has no native
- * transaction, so direct values.update can overwrite a concurrent request
- * that read the same old stock. findReplace scoped to a single stock cell
- * gives us a server-side "only replace if the cell still equals X" guard.
+ * transaction, so we read each target cell raw (UNFORMATTED_VALUE — bypasses
+ * thousand-separator / formula display) and only write when every cell still
+ * equals the value the caller saw. The read→write gap is a few hundred ms in
+ * the same request handler, which is acceptable for this app's traffic.
  */
 export async function compareAndSetStockCells(args: {
   sheetName: string;
@@ -551,80 +524,57 @@ export async function compareAndSetStockCells(args: {
     return { ok: false, status: 503, error: 'Google Sheets API not configured' };
   }
 
-  const sheetId = await getSheetIdByTitle(args.sheetName);
-  if (sheetId === null) {
-    return { ok: false, status: 500, error: 'ไม่พบ sheet id ของตารางสต็อก' };
-  }
-
-  const stockColIndex = colLetterToIndex(args.stockColLetter);
   const changes = [...args.changes].sort((a, b) => a.rowNumber - b.rowNumber);
+  const ranges = changes.map(
+    (c) => `${args.sheetName}!${args.stockColLetter}${c.rowNumber}`,
+  );
+
+  const parseCell = (v: unknown): number | null => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    const raw = String(v ?? '').trim();
+    if (raw === '' || raw === '-') return 0;
+    const cleaned = raw.replace(/,/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
 
   try {
-    const response = await sheets.spreadsheets.batchUpdate({
+    const read = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+
+    const valueRanges = read.data.valueRanges ?? [];
+    for (let i = 0; i < changes.length; i++) {
+      const change = changes[i];
+      const cell = valueRanges[i]?.values?.[0]?.[0];
+      const current = parseCell(cell);
+      if (current === null || current !== change.expectedStock) {
+        return {
+          ok: false,
+          status: 409,
+          conflictCode: change.code,
+          currentStock: current ?? undefined,
+          error:
+            `สต็อก "${change.name}" (${change.code}) ถูกเปลี่ยนโดยรายการอื่นระหว่างบันทึก ` +
+            `(ตอนเริ่ม ${change.expectedStock}, ตอนนี้ ${current ?? 'อ่านไม่ได้'}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
+        };
+      }
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
-        requests: changes.map((change) => ({
-          findReplace: {
-            range: {
-              sheetId,
-              startRowIndex: change.rowNumber - 1,
-              endRowIndex: change.rowNumber,
-              startColumnIndex: stockColIndex,
-              endColumnIndex: stockColIndex + 1,
-            },
-            find: String(change.expectedStock),
-            replacement: String(change.nextStock),
-            matchCase: true,
-            matchEntireCell: true,
-          },
+        valueInputOption: 'USER_ENTERED',
+        data: changes.map((change) => ({
+          range: `${args.sheetName}!${args.stockColLetter}${change.rowNumber}`,
+          values: [[change.nextStock]],
         })),
       },
     });
 
-    const changed = response.data.replies?.map(
-      (reply) => reply.findReplace?.occurrencesChanged ?? 0,
-    ) ?? [];
-    const failedIndex = changed.findIndex((count) => count !== 1);
-
-    if (failedIndex === -1) return { ok: true };
-
-    // Best-effort rollback for any earlier cells changed by this batch.
-    const applied = changes.slice(0, failedIndex);
-    if (applied.length > 0) {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: applied.map((change) => ({
-            findReplace: {
-              range: {
-                sheetId,
-                startRowIndex: change.rowNumber - 1,
-                endRowIndex: change.rowNumber,
-                startColumnIndex: stockColIndex,
-                endColumnIndex: stockColIndex + 1,
-              },
-              find: String(change.nextStock),
-              replacement: String(change.expectedStock),
-              matchCase: true,
-              matchEntireCell: true,
-            },
-          })),
-        },
-      });
-    }
-
-    const conflict = changes[failedIndex];
-    const latest = await readItemsSheet();
-    const current = latest?.rows.find((r) => r.code === conflict.code)?.stock;
-    return {
-      ok: false,
-      status: 409,
-      conflictCode: conflict.code,
-      currentStock: current,
-      error:
-        `สต็อก "${conflict.name}" (${conflict.code}) ถูกเปลี่ยนโดยรายการอื่นระหว่างบันทึก ` +
-        `(ตอนเริ่ม ${conflict.expectedStock}, ตอนนี้ ${current ?? 'ไม่ทราบ'}) — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง`,
-    };
+    return { ok: true };
   } catch (error) {
     console.error('Google Sheets Error (compareAndSetStockCells):', error);
     return { ok: false, status: 500, error: 'อัปเดตสต็อกไม่สำเร็จ' };
