@@ -80,10 +80,15 @@ export function MainNav() {
   if (HIDDEN_ON.includes(pathname)) return null;
   if (!me?.isAuthenticated) return null;
 
+  // Admin (ผู้ดูแลระบบ) unlocks every menu the same way Creator does, so
+  // the test account can hop between pages from the top nav / mobile
+  // drawer without role-juggling. Regular roles stay restricted.
+  const isPower = me.isCreator || me.adminAuth;
   const visibleIds = new Set(
     getVisibleMenuIds({
       role: me.role,
       isCreator: me.isCreator,
+      isAdmin: me.adminAuth,
       customMenus: me.customMenus,
     }),
   );
@@ -249,13 +254,14 @@ export function MainNav() {
         <div className="mainnav-right">
           {userBadge}
           {/*
-            Non-creator users cannot change their own group once it is bound
+            Regular users cannot change their own group once it is bound
             (locked by /api/auth/role + the role-select server guard). The
             self-service "🔄 เปลี่ยนกลุ่ม" shortcut is therefore only shown
-            to Creator sessions, who use it for impersonation / support.
+            to Creator + Admin sessions — Creator for impersonation/support,
+            Admin for system-wide testing across every role.
           */}
-          {me.isCreator && (
-            <Link href="/role-select" className="mainnav-secondary" title="เปลี่ยนกลุ่ม (Creator)">
+          {isPower && (
+            <Link href="/role-select" className="mainnav-secondary" title="เปลี่ยนกลุ่ม (ผู้ดูแลระบบ)">
               🔄
             </Link>
           )}
@@ -298,7 +304,7 @@ export function MainNav() {
             </div>
             <div className="mainnav-mobile-foot">
               {userBadge}
-              {me.isCreator && (
+              {isPower && (
                 <Link href="/role-select" className="mainnav-secondary mainnav-mobile-secondary">
                   🔄 เปลี่ยนกลุ่ม
                 </Link>

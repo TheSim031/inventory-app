@@ -45,7 +45,9 @@ export function getSessionContext(request: RequestLike): SessionContext {
 
 /**
  * Returns null when access is allowed, or a NextResponse 401/403 the route
- * should return immediately. Creator bypasses every role check.
+ * should return immediately. Creator and Admin (staff session) both bypass
+ * every role check — Admin is the "ผู้ดูแลระบบ" test account that needs
+ * unrestricted access to every page/API for system-wide testing.
  *
  *   const denied = requireRoles(request, ['WAREHOUSE']);
  *   if (denied) return denied;
@@ -59,6 +61,7 @@ export function requireRoles(
     return NextResponse.json({ error: 'กรุณาเข้าสู่ระบบก่อน' }, { status: 401 });
   }
   if (ctx.isCreator) return null; // super-admin bypass
+  if (ctx.isAdmin) return null;   // ผู้ดูแลระบบ bypass
   if (allowed.length === 0) return null; // any authenticated user
   if (!ctx.role || !allowed.includes(ctx.role)) {
     return NextResponse.json(

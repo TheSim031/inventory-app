@@ -8,6 +8,8 @@ import styles from './home.module.css';
 type Props = {
   role: UserRole | null;
   isCreator: boolean;
+  /** Staff/Admin session — gets the same "see every card" treatment as Creator. */
+  isAdmin?: boolean;
   customMenus: string[] | null;
   displayName: string;
   roleLabel: string;
@@ -26,30 +28,36 @@ type Props = {
 export default function HomeMenu({
   role,
   isCreator,
+  isAdmin = false,
   customMenus,
   displayName,
   roleLabel,
   roleIcon,
 }: Props) {
+  // Admin (ผู้ดูแลระบบ) is treated as a power-user for visibility — every
+  // creator-only entry unlocks too, so the test account can see and click
+  // every main + sub category without swapping roles.
+  const isPower = isCreator || isAdmin;
+
   const visibleIds = useMemo(
-    () => new Set(getVisibleMenuIds({ role, isCreator, customMenus })),
-    [role, isCreator, customMenus],
+    () => new Set(getVisibleMenuIds({ role, isCreator, isAdmin, customMenus })),
+    [role, isCreator, isAdmin, customMenus],
   );
 
   // Only render top-level items whose parent OR at least one child is
   // visible. Leaves (no children) only appear if the leaf itself is visible.
   const cards = useMemo(() => {
     return MENU_ITEMS.filter((item) => {
-      if (item.creatorOnly && !isCreator) return false;
+      if (item.creatorOnly && !isPower) return false;
       if (item.children?.length) {
         if (visibleIds.has(item.id)) return true;
         return item.children.some(
-          (c) => visibleIds.has(c.id) && (!c.creatorOnly || isCreator),
+          (c) => visibleIds.has(c.id) && (!c.creatorOnly || isPower),
         );
       }
       return visibleIds.has(item.id);
     });
-  }, [visibleIds, isCreator]);
+  }, [visibleIds, isPower]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = useMemo(
@@ -69,7 +77,7 @@ export default function HomeMenu({
 
   const visibleChildren = (item: MenuItem) =>
     (item.children || []).filter(
-      (c) => visibleIds.has(c.id) && (!c.creatorOnly || isCreator),
+      (c) => visibleIds.has(c.id) && (!c.creatorOnly || isPower),
     );
 
   const handleCardClick = (item: MenuItem) => {

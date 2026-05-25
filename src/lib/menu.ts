@@ -87,9 +87,16 @@ export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
 export function getVisibleMenuIds(args: {
   role: UserRole | null;
   isCreator: boolean;
+  /**
+   * Staff/Admin session ("ผู้ดูแลระบบ"). When true, treated like Creator
+   * for visibility — every main + sub menu is returned so the admin can
+   * test every page without role-juggling. Regular users (role-only) stay
+   * locked to their ROLE_MENU_IDS / customMenus list.
+   */
+  isAdmin?: boolean;
   customMenus?: string[] | null;
 }): string[] {
-  if (args.isCreator) {
+  if (args.isCreator || args.isAdmin) {
     return MENU_ITEMS.flatMap((m) => [m.id, ...(m.children?.map((c) => c.id) ?? [])]);
   }
   if (Array.isArray(args.customMenus) && args.customMenus.length > 0) {

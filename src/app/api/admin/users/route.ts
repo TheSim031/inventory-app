@@ -9,16 +9,24 @@ import { isUserRole } from '@/lib/userRole';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function requireCreator(request: NextRequest): boolean {
-  return request.cookies.get('creator_session')?.value === 'authenticated';
+/**
+ * Creator (super-admin) and Admin (ผู้ดูแลระบบ / staff session) both pass
+ * — Admin needs access to the user-management screen so the test account
+ * can verify the role/customMenus flow end-to-end.
+ */
+function requireAdminOrCreator(request: NextRequest): boolean {
+  const isCreator =
+    request.cookies.get('creator_session')?.value === 'authenticated';
+  const isAdmin = request.cookies.get('auth_session')?.value === 'authenticated';
+  return isCreator || isAdmin;
 }
 
 /**
- * List every user who has logged in. Creator-only.
+ * List every user who has logged in. Admin / Creator only.
  */
 export async function GET(request: NextRequest) {
-  if (!requireCreator(request)) {
-    return NextResponse.json({ error: 'Creator session required' }, { status: 403 });
+  if (!requireAdminOrCreator(request)) {
+    return NextResponse.json({ error: 'Admin or Creator session required' }, { status: 403 });
   }
   try {
     const rows = await readUsersSheet();
@@ -39,11 +47,11 @@ type PatchBody = {
 };
 
 /**
- * Update a user's role and/or custom-menu override. Creator-only.
+ * Update a user's role and/or custom-menu override. Admin / Creator only.
  */
 export async function PATCH(request: NextRequest) {
-  if (!requireCreator(request)) {
-    return NextResponse.json({ error: 'Creator session required' }, { status: 403 });
+  if (!requireAdminOrCreator(request)) {
+    return NextResponse.json({ error: 'Admin or Creator session required' }, { status: 403 });
   }
 
   let body: PatchBody;

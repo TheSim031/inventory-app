@@ -156,12 +156,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Creator (super-admin) bypasses every role check.
-  if (ctx.isCreator) {
+  // Creator (super-admin) and Admin (staff session, "ผู้ดูแลระบบ") both
+  // bypass every role check. Admin is unlocked here so the test account
+  // can freely jump between /in, /request, /limit-stock, /inspect, etc.
+  // without flipping the user_role cookie each time.
+  if (ctx.isCreator || ctx.isAdmin) {
     return rollSessionCookies(request, NextResponse.next());
   }
 
-  // /admin/* is creator-only — non-creators are denied.
+  // /admin/* is creator/admin-only — regular roles are denied. (The bypass
+  // above already let Creator/Admin through, so reaching this branch means
+  // the caller is a normal LINE user.)
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     const url = request.nextUrl.clone();
     url.pathname = '/403';

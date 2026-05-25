@@ -62,6 +62,7 @@ export default async function HomePage() {
     <HomeMenu
       role={role}
       isCreator={isCreator}
+      isAdmin={adminAuth}
       customMenus={customMenus}
       displayName={displayName}
       roleLabel={roleLabel}
