@@ -14,15 +14,30 @@ function getDriveClient(): drive_v3.Drive | null {
   return google.drive({ version: 'v3', auth });
 }
 
+/** Accept the raw folder id, or a Drive folder URL — both are common
+ *  things to paste into an env var. e.g.
+ *    GOOGLE_DRIVE_FOLDER_ID=19D50c98SaPA3uEfh94qOer2pS0D8h1KF
+ *    GOOGLE_DRIVE_FOLDER_ID=https://drive.google.com/drive/folders/19D50c98SaPA3uEfh94qOer2pS0D8h1KF?usp=drive_link
+ */
+function normalizeFolderIdEnv(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const urlMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (urlMatch) return urlMatch[1];
+  const idMatch = trimmed.match(/\?(?:.*&)?id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
+  return trimmed;
+}
+
 async function getOrCreateRootFolder(
   drive: drive_v3.Drive,
 ): Promise<string | null> {
   if (cachedRootFolderId) return cachedRootFolderId;
   // Allow overriding via env when the service account is given access to a
   // pre-shared folder (recommended for Shared Drives).
-  const envId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  if (envId && envId.trim()) {
-    cachedRootFolderId = envId.trim();
+  const envId = normalizeFolderIdEnv(process.env.GOOGLE_DRIVE_FOLDER_ID || '');
+  if (envId) {
+    cachedRootFolderId = envId;
     return cachedRootFolderId;
   }
 
