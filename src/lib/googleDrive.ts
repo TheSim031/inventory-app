@@ -62,20 +62,84 @@ export type UploadedImage = {
   name: string;
 };
 
+export type DriveFailureReason =
+  | 'NOT_CONFIGURED'        // service account env missing
+  | 'API_DISABLED'          // Drive API not enabled in GCP project
+  | 'AUTH_DENIED'           // 401/403 from Drive
+  | 'PERMISSION_GRANT_FAIL' // file uploaded but couldn't be made link-viewable
+  | 'UNKNOWN';
+
+export type DriveUploadResult =
+  | { ok: true; image: UploadedImage }
+  | { ok: false; reason: DriveFailureReason; detail?: string };
+
+const ENABLE_DRIVE_API_HINT =
+  'เปิดใช้งาน Google Drive API ใน Google Cloud Console ของ project ที่ service account สังกัด แล้วรอ 1–2 นาที';
+
+function classifyDriveError(error: unknown): {
+  reason: DriveFailureReason;
+  detail?: string;
+} {
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+      ? error
+      : '';
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes('drive api has not been used') ||
+    lower.includes('api drive.googleapis.com') ||
+    lower.includes('it is disabled')
+  ) {
+    return { reason: 'API_DISABLED', detail: ENABLE_DRIVE_API_HINT };
+  }
+  // googleapis sets .code (and sometimes .response.status) on API errors.
+  const code = (error as { code?: number | string; response?: { status?: number } } | null)
+    ?.code;
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  if (code === 401 || code === 403 || status === 401 || status === 403) {
+    return {
+      reason: 'AUTH_DENIED',
+      detail: 'service account ไม่มีสิทธิ์ — ตรวจ env GOOGLE_SERVICE_ACCOUNT และการ share folder',
+    };
+  }
+  return { reason: 'UNKNOWN', detail: msg || undefined };
+}
+
 /**
  * Upload a base64-encoded image (data URL or raw) to the app's Drive folder.
  * Sets public-link permission so the returned URL is viewable in <img>.
- * Returns null if Drive isn't configured.
  */
 export async function uploadImageToDrive(args: {
   base64: string;
   mimeType: string;
   filename?: string;
-}): Promise<UploadedImage | null> {
+}): Promise<DriveUploadResult> {
   const drive = getDriveClient();
-  if (!drive) return null;
-  const folderId = await getOrCreateRootFolder(drive);
-  if (!folderId) return null;
+  if (!drive) {
+    return {
+      ok: false,
+      reason: 'NOT_CONFIGURED',
+      detail: 'service account env ไม่ครบ',
+    };
+  }
+
+  let folderId: string | null;
+  try {
+    folderId = await getOrCreateRootFolder(drive);
+  } catch (error) {
+    return { ok: false, ...classifyDriveError(error) };
+  }
+  if (!folderId) {
+    // getOrCreateRootFolder swallowed the error and logged it. We can't see
+    // the original cause from here, so report generically.
+    return {
+      ok: false,
+      reason: 'UNKNOWN',
+      detail: 'หา/สร้าง folder บน Drive ไม่ได้ — ดู Vercel logs สำหรับสาเหตุ',
+    };
+  }
 
   // Accept either a data URL ("data:image/jpeg;base64,...") or raw base64.
   const commaIdx = args.base64.indexOf(',');
@@ -90,47 +154,55 @@ export async function uploadImageToDrive(args: {
   })();
   const name = (args.filename || `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`).replace(/[\\/:*?"<>|]/g, '_');
 
+  let fileId: string | undefined;
+  let createdName: string | undefined;
   try {
     const created = await drive.files.create({
       requestBody: { name, parents: [folderId], mimeType: args.mimeType },
       media: { mimeType: args.mimeType, body: Readable.from(buffer) },
       fields: 'id,name',
     });
-    const fileId = created.data.id;
-    if (!fileId) return null;
+    fileId = created.data.id ?? undefined;
+    createdName = created.data.name ?? undefined;
+  } catch (error) {
+    console.error('Google Drive Error (files.create):', error);
+    return { ok: false, ...classifyDriveError(error) };
+  }
+  if (!fileId) {
+    return { ok: false, reason: 'UNKNOWN', detail: 'Drive ไม่ส่ง fileId กลับ' };
+  }
 
-    // Make link-viewable so <img src=...> works without auth. If sharing
-    // fails (Workspace policy / quota) the file is useless to us — delete
-    // it so we don't leave half-public artifacts behind, and signal failure
-    // to the caller so the UI can show a real error instead of a broken
-    // image later.
+  // Make link-viewable so <img src=...> works without auth. If sharing
+  // fails (Workspace policy / quota) the file is useless to us — roll it
+  // back so we don't leave half-public artifacts behind.
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: 'reader', type: 'anyone' },
+    });
+  } catch (permErr) {
+    console.error('Google Drive: permission grant failed — rolling back upload', permErr);
     try {
-      await drive.permissions.create({
-        fileId,
-        requestBody: { role: 'reader', type: 'anyone' },
-      });
-    } catch (permErr) {
-      console.error(
-        'Google Drive: permission grant failed — rolling back upload',
-        permErr,
-      );
-      try {
-        await drive.files.delete({ fileId });
-      } catch (delErr) {
-        console.error('Google Drive: rollback delete also failed', delErr);
-      }
-      return null;
+      await drive.files.delete({ fileId });
+    } catch (delErr) {
+      console.error('Google Drive: rollback delete also failed', delErr);
     }
-
+    const classified = classifyDriveError(permErr);
     return {
+      ok: false,
+      reason: classified.reason === 'UNKNOWN' ? 'PERMISSION_GRANT_FAIL' : classified.reason,
+      detail: classified.detail || 'ตั้งสิทธิ์ share ไฟล์ไม่สำเร็จ — ตรวจ Workspace sharing policy',
+    };
+  }
+
+  return {
+    ok: true,
+    image: {
       fileId,
       url: `https://drive.google.com/uc?id=${fileId}`,
-      name: created.data.name || name,
-    };
-  } catch (error) {
-    console.error('Google Drive Error (uploadImageToDrive):', error);
-    return null;
-  }
+      name: createdName || name,
+    },
+  };
 }
 
 export async function deleteDriveFile(fileId: string): Promise<boolean> {

@@ -48,11 +48,21 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await uploadImageToDrive({ base64, mimeType, filename });
-  if (!result) {
+  if (!result.ok) {
+    const REASON_LABEL: Record<typeof result.reason, string> = {
+      NOT_CONFIGURED: 'Google Drive ยังไม่ได้ตั้งค่าใน server',
+      API_DISABLED: 'Google Drive API ยังไม่ได้เปิดใน Google Cloud project',
+      AUTH_DENIED: 'service account ไม่มีสิทธิ์เข้า Drive',
+      PERMISSION_GRANT_FAIL: 'อัปโหลดไฟล์ได้ แต่ตั้งสิทธิ์แชร์ไม่สำเร็จ',
+      UNKNOWN: 'อัปโหลด Drive ไม่สำเร็จ',
+    };
+    const label = REASON_LABEL[result.reason];
+    const detail = result.detail ? ` — ${result.detail}` : '';
+    const status = result.reason === 'NOT_CONFIGURED' ? 503 : 500;
     return NextResponse.json(
-      { error: 'อัปโหลด Drive ไม่สำเร็จ — ตรวจสอบการตั้งค่า service account' },
-      { status: 500 },
+      { error: `${label}${detail}`, reason: result.reason },
+      { status },
     );
   }
-  return NextResponse.json(result, { status: 201 });
+  return NextResponse.json(result.image, { status: 201 });
 }
