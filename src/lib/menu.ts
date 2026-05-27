@@ -53,6 +53,20 @@ export const MENU_ITEMS: MenuItem[] = [
         icon: '👥',
         creatorOnly: true,
       },
+      {
+        id: 'admin-departments',
+        label: 'แก้ไขแผนก',
+        href: '/admin/departments',
+        icon: '🏢',
+        creatorOnly: true,
+      },
+      {
+        id: 'admin-internal-pick',
+        label: 'เบิกสินค้าภายใน (ไม่แจ้งเตือน)',
+        href: '/admin/internal-pick',
+        icon: '🤫',
+        creatorOnly: true,
+      },
     ],
   },
 ];

@@ -1,0 +1,434 @@
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  padding-bottom: 6rem;
+  min-height: 100vh;
+}
+
+.header h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+.header h1 span { color: var(--primary-color); }
+.header p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.slips {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.slipCard {
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  border: 2px solid var(--text-primary);
+  border-top: 6px solid var(--primary-color);
+}
+
+.slipHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 3px solid var(--primary-color);
+}
+
+.slipHead h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.slipCount {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.btnRemoveSlip {
+  background: transparent;
+  color: var(--danger-color);
+  border: 1.5px solid var(--danger-color);
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btnRemoveSlip:hover {
+  background: var(--danger-color);
+  color: #fff;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  min-height: 44px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  outline: none;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.itemsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 1rem 0 0.75rem;
+  font-weight: 800;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.btnAddItem {
+  padding: 0.55rem 0.9rem;
+  border: 1.5px dashed var(--primary-color);
+  border-radius: var(--radius-md);
+  color: var(--primary-color);
+  font-weight: 700;
+  font-size: 0.8rem;
+  background: var(--surface-color);
+  cursor: pointer;
+  transition: background 0.15s, border-style 0.15s;
+}
+.btnAddItem:hover {
+  background: var(--primary-soft);
+  border-style: solid;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.itemRow {
+  border: 1.5px solid var(--border-color);
+  border-left: 4px solid var(--primary-color);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem 0.5rem;
+  background: #fafafa;
+}
+
+.itemRowHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.itemRowIdx {
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--primary-color);
+}
+
+.btnRemoveItem {
+  font-size: 0.75rem;
+  color: var(--danger-color);
+  font-weight: 700;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+}
+.btnRemoveItem:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.itemGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.searchBox {
+  position: relative;
+}
+
+.suggestionList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface-color);
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 20;
+  list-style: none;
+  padding: 0.25rem;
+  margin: 0;
+}
+
+.suggestionItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.suggestionItem:hover {
+  background: var(--primary-soft);
+}
+
+.suggestionName {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.suggestionName code {
+  background: rgba(15, 23, 42, 0.06);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-right: 0.35rem;
+}
+
+.suggestionStock {
+  font-size: 0.85rem;
+  color: var(--success-color);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  align-items: center;
+  position: sticky;
+  bottom: 1rem;
+  background: var(--surface-color);
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  z-index: 5;
+}
+
+.btnAddSlip {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px dashed var(--text-primary);
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btnAddSlip:hover {
+  background: var(--text-primary);
+  color: #fff;
+}
+
+.btnPrint {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--text-primary);
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btnPrint:not(:disabled):hover {
+  background: var(--text-primary);
+  color: #fff;
+}
+.btnPrint:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnSubmit {
+  flex: 1;
+  min-width: 220px;
+  background: var(--primary-color);
+  color: #fff;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-red);
+  border: 0;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.btnSubmit:not(:disabled):hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.btnSubmit:disabled {
+  background: var(--text-muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ─── Print-only blocks (hidden on screen) ─── */
+.printSlipHead,
+.printField,
+.printItemsTable,
+.printSignBlock {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .fieldRow { grid-template-columns: 1fr; }
+  .itemGrid { grid-template-columns: 1fr; }
+}
+
+/* ─── Print mode (body.printing-internal-slips) ─── */
+:global(body.printing-internal-slips) .printSlipHead {
+  display: block;
+  text-align: center;
+  border-bottom: 3px solid #000;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+}
+:global(body.printing-internal-slips) .printSlipHead h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+:global(body.printing-internal-slips) .printSlipHead div {
+  font-size: 0.85rem;
+  color: #333;
+  margin-top: 0.25rem;
+}
+:global(body.printing-internal-slips) .printField {
+  display: block;
+  font-size: 0.95rem;
+  padding: 0.35rem 0;
+}
+:global(body.printing-internal-slips) .printField strong {
+  display: inline-block;
+  min-width: 110px;
+}
+:global(body.printing-internal-slips) .printItemsTable {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0 1rem;
+}
+:global(body.printing-internal-slips) .printItemsTable th,
+:global(body.printing-internal-slips) .printItemsTable td {
+  border: 1.5px solid #000;
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  font-size: 0.9rem;
+}
+:global(body.printing-internal-slips) .printItemsTable th {
+  background: #f2f2f2;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+:global(body.printing-internal-slips) .printSignBlock {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 1.5rem;
+}
+:global(body.printing-internal-slips) .printSignLine {
+  border-top: 1px solid #000;
+  padding-top: 0.5rem;
+  text-align: center;
+  margin-top: 2.25rem;
+  font-size: 0.85rem;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  .container {
+    padding: 0;
+    max-width: none;
+  }
+  .slips {
+    gap: 0;
+  }
+  /* Each slip prints on its own page so cuts are clean. */
+  :global(.internal-slip-print) {
+    page-break-after: always;
+    break-after: page;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    margin: 0;
+  }
+  :global(.internal-slip-print:last-child) {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .fieldRow {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

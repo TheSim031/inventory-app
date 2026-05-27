@@ -126,17 +126,27 @@
 .suggestionName {
   font-weight: 600;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.35;
 }
 
-.suggestionName code {
+.suggestionCode {
   background: rgba(15, 23, 42, 0.06);
   padding: 0.05rem 0.4rem;
   border-radius: 4px;
   font-size: 0.85rem;
   margin-right: 0.4rem;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.suggestionNameText {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .suggestionCategory {
@@ -163,9 +173,21 @@
   font-size: 0.875rem;
   color: var(--success-color);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   font-weight: 600;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.selectedHint strong {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .clearBtn {
@@ -330,6 +352,27 @@
   .suggestionItem {
     min-height: 56px;
     padding: 0.85rem 0.75rem;
+    align-items: flex-start;
+  }
+  /* On mobile, hide the code badge — category line below is the secondary
+     identifier so the item name has full room to wrap. */
+  .suggestionCode,
+  .suggestionCodeSep,
+  .selectedHintCode {
+    display: none;
+  }
+  .selectedHintCategory {
+    color: var(--primary-color);
+    font-weight: 700;
+  }
+  .suggestionCategory {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+  .suggestionStock {
+    flex-shrink: 0;
+    align-self: flex-start;
   }
   .imagesSection {
     margin: 1.25rem 0 0.75rem;

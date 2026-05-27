@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { isUserRole, ROLE_COOKIE, ROLE_HOME } from '@/lib/userRole';
+import { isUserRole, ROLE_COOKIE, ROLE_HOME, type UserRole } from '@/lib/userRole';
 import { decodeLineSession } from '@/lib/lineAuth';
-import { findUserRow, updateUserRole } from '@/lib/googleSheets';
+import {
+  findUserRow,
+  readCustomGroupsSheet,
+  updateUserCustomMenus,
+  updateUserRole,
+} from '@/lib/googleSheets';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,16 +37,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  let body: { role?: string };
+  let body: { role?: string; customGroupId?: string };
   try {
-    body = (await request.json()) as { role?: string };
+    body = (await request.json()) as { role?: string; customGroupId?: string };
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const role = body.role;
-  if (!isUserRole(role)) {
-    return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+  let role: UserRole;
+  let customGroupMenus: string[] | null = null;
+  let customGroupId: string | null = null;
+
+  if (body.customGroupId) {
+    // Custom group path — resolve the group to a baseRole + menuIds, then
+    // store both. The menuIds are written to the user's customMenus column
+    // so MainNav + HomeMenu render only the ticked items.
+    const groups = await readCustomGroupsSheet();
+    if (!groups) {
+      return NextResponse.json({ error: 'อ่านกลุ่มไม่ได้' }, { status: 500 });
+    }
+    const group = groups.find((g) => g.id === body.customGroupId);
+    if (!group) {
+      return NextResponse.json({ error: 'ไม่พบกลุ่มที่เลือก' }, { status: 404 });
+    }
+    if (!isUserRole(group.baseRole)) {
+      return NextResponse.json(
+        { error: `กลุ่มนี้มี baseRole ที่ไม่ถูกต้อง: ${group.baseRole}` },
+        { status: 500 },
+      );
+    }
+    role = group.baseRole;
+    customGroupMenus = group.menuIds;
+    customGroupId = group.id;
+  } else {
+    if (!isUserRole(body.role)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+    role = body.role;
   }
 
   // Enforce one-time binding for regular LINE users. Creators are exempt.
@@ -70,9 +102,19 @@ export async function POST(request: NextRequest) {
     updateUserRole(lineUser.userId, role).catch((err) =>
       console.error('updateUserRole failed:', err),
     );
+    if (customGroupMenus) {
+      updateUserCustomMenus(lineUser.userId, customGroupMenus).catch((err) =>
+        console.error('updateUserCustomMenus (custom group) failed:', err),
+      );
+    }
   }
 
-  const response = NextResponse.json({ success: true, role, home: ROLE_HOME[role] });
+  const response = NextResponse.json({
+    success: true,
+    role,
+    home: ROLE_HOME[role],
+    customGroupId,
+  });
   response.cookies.set(ROLE_COOKIE, role, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

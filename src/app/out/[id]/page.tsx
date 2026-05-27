@@ -59,6 +59,8 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
 
   // pickStates keyed by index — same code may appear multiple times
   const [pickStates, setPickStates] = useState<Record<number, PickStatus>>({});
+  // Editable picked quantities — keyed by index, defaults to requested quantity
+  const [pickedQty, setPickedQty] = useState<Record<number, number>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // Reject modal — requires a reason that's sent to the requester via LINE
@@ -74,6 +76,15 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
       }
       return { ...prev, [idx]: status };
     });
+  };
+
+  const getPickedQty = (idx: number, requested: number): number => {
+    const v = pickedQty[idx];
+    return Number.isFinite(v) && v >= 0 ? v : requested;
+  };
+
+  const setPickedQtyAt = (idx: number, value: number) => {
+    setPickedQty((prev) => ({ ...prev, [idx]: value }));
   };
 
   const reviewed = useMemo(() => {
@@ -109,10 +120,15 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
       const itemStatuses = requisition.items.map(
         (_, i) => (pickStates[i] === 'PICKED' ? 'PICKED' : 'OUT_OF_STOCK'),
       );
+      // Send the warehouse-edited actual quantity for each line — the API
+      // uses this to decide the OUT row amount and the LINE-notify payload.
+      const pickedQuantities = requisition.items.map((it, i) =>
+        getPickedQty(i, it.quantity),
+      );
       const res = await fetch(`/api/requisitions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'CONFIRM_PICK', itemStatuses }),
+        body: JSON.stringify({ action: 'CONFIRM_PICK', itemStatuses, pickedQuantities }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -283,7 +299,9 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
         {requisition.items.map((it, idx) => {
           const status = pickStates[idx];
           const stock = stockMap.get(it.code);
-          const stockLow = stock != null && stock < it.quantity;
+          const currentQty = getPickedQty(idx, it.quantity);
+          const stockLow = stock != null && stock < currentQty;
+          const qtyMismatch = currentQty !== it.quantity;
           const rowClass =
             status === 'PICKED'
               ? `${styles.itemRow} ${styles.statusPicked}`
@@ -302,6 +320,34 @@ export default function PickPage({ params }: { params: Promise<{ id: string }> }
                   <span className={stockLow ? styles.itemStockLow : styles.itemStock}>
                     คงเหลือในระบบ {stock != null ? stock : '-'}
                   </span>
+                </div>
+                <div className={styles.pickedQtyRow}>
+                  <label className={styles.pickedQtyLabel}>
+                    จำนวนที่จัด:
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className={`${styles.pickedQtyInput} ${qtyMismatch ? styles.pickedQtyEdited : ''}`}
+                    value={currentQty}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') {
+                        setPickedQtyAt(idx, 0);
+                        return;
+                      }
+                      const n = parseInt(v, 10);
+                      if (Number.isFinite(n) && n >= 0) setPickedQtyAt(idx, n);
+                    }}
+                    disabled={status === 'OUT_OF_STOCK'}
+                    aria-label={`จำนวนที่จัดของ ${it.name}`}
+                  />
+                  {qtyMismatch && status !== 'OUT_OF_STOCK' && (
+                    <span className={styles.pickedQtyHint}>
+                      ✎ แก้แล้ว ({it.quantity} → {currentQty})
+                    </span>
+                  )}
                 </div>
               </div>
               <div className={styles.itemActions}>

@@ -39,6 +39,8 @@ export function MainNav() {
   const { data: me, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,8 +95,12 @@ export function MainNav() {
     }),
   );
 
-  const handleLogout = async () => {
-    if (!confirm('ออกจากระบบ?')) return;
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const doLogout = async () => {
+    setLoggingOut(true);
     await Promise.all([
       fetch('/api/auth/logout', { method: 'POST' }),
       fetch('/api/auth/line/logout', { method: 'POST' }),
@@ -103,6 +109,8 @@ export function MainNav() {
     ]);
     broadcastAuthChanged('logout');
     mutate();
+    setShowLogoutConfirm(false);
+    setLoggingOut(false);
     router.push('/');
     router.refresh();
   };
@@ -274,6 +282,36 @@ export function MainNav() {
           </button>
         </div>
       </div>
+
+      {/* Logout confirmation modal */}
+      {showLogoutConfirm && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-title">🚪 ออกจากระบบ</div>
+            <div className="modal-body">
+              คุณต้องการออกจากระบบใช่หรือไม่?
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-btn modal-btn-no"
+                onClick={() => setShowLogoutConfirm(false)}
+                disabled={loggingOut}
+              >
+                ไม่ใช่
+              </button>
+              <button
+                type="button"
+                className="modal-btn modal-btn-yes"
+                onClick={doLogout}
+                disabled={loggingOut}
+              >
+                {loggingOut ? '⏳ กำลังออก...' : 'ใช่ ออกจากระบบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile drawer */}
       {mobileOpen && (

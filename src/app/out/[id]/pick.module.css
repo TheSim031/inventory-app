@@ -212,6 +212,59 @@
   font-weight: 700;
 }
 
+.pickedQtyRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pickedQtyLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pickedQtyInput {
+  width: 90px;
+  padding: 0.4rem 0.6rem;
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: right;
+  background: #fff;
+  color: var(--text-primary);
+  font-family: var(--font-geist-mono), monospace;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pickedQtyInput:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.pickedQtyInput:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #f4f4f4;
+}
+
+.pickedQtyEdited {
+  border-color: var(--primary-color);
+  background: rgba(220, 38, 38, 0.04);
+}
+
+.pickedQtyHint {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
 .itemActions {
   display: flex;
   gap: 0.5rem;

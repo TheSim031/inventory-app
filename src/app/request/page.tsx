@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
-const DEPARTMENTS = [
+const FALLBACK_DEPARTMENTS = [
   'แผนกประกอบ Basevalue',
   'แผนกประกอบใหญ่',
   'แผนกประกอบ Subtank',
@@ -25,7 +25,11 @@ const DEPARTMENTS = [
   'แผนกเชื่อม',
   'แผนกTracking',
   'อื่นๆ',
-] as const;
+];
+
+type DepartmentsResponse = {
+  departments: { sheetRow: number; name: string }[];
+};
 
 type Item = {
   id: string;
@@ -87,6 +91,7 @@ export default function RequestPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [friendAcked, setFriendAcked] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -105,6 +110,20 @@ export default function RequestPage() {
   const { data: items, error } = useSWR<Item[]>('/api/items', fetcher, {
     refreshInterval: 5000,
   });
+  const { data: deptData } = useSWR<DepartmentsResponse>(
+    '/api/admin/departments',
+    fetcher,
+  );
+  const departments = useMemo(() => {
+    const fromSheet = deptData?.departments?.map((d) => d.name) ?? [];
+    if (fromSheet.length === 0) return FALLBACK_DEPARTMENTS;
+    // Always keep "อื่นๆ" as the last option so the custom-department textbox
+    // still works for departments the admin hasn't added yet.
+    const seen = new Set(fromSheet);
+    const ordered = [...fromSheet];
+    if (!seen.has('อื่นๆ')) ordered.push('อื่นๆ');
+    return ordered;
+  }, [deptData]);
 
   useEffect(() => {
     draftReadyRef.current = true;
@@ -180,6 +199,33 @@ export default function RequestPage() {
     });
   };
 
+  const setQuantity = (id: string, raw: string) => {
+    setCart((prev) => {
+      const entry = prev[id];
+      if (!entry) return prev;
+      if (raw === '') return { ...prev, [id]: { ...entry, quantity: 0 } };
+      const n = parseInt(raw, 10);
+      if (!Number.isFinite(n) || n < 0) return prev;
+      const clamped = Math.min(n, entry.maxStock);
+      return { ...prev, [id]: { ...entry, quantity: clamped } };
+    });
+  };
+
+  const commitQuantity = (id: string) => {
+    setCart((prev) => {
+      const entry = prev[id];
+      if (!entry) return prev;
+      // On blur, drop a line whose quantity has been cleared/zeroed instead
+      // of leaving an invalid 0-qty entry in the request.
+      if (entry.quantity <= 0) {
+        const rest = { ...prev };
+        delete rest[id];
+        return rest;
+      }
+      return prev;
+    });
+  };
+
   const removeFromCart = (id: string) => {
     setCart((prev) => {
       const rest = { ...prev };
@@ -200,8 +246,14 @@ export default function RequestPage() {
     !!form.purpose.trim() &&
     !!resolvedDepartment;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const openConfirm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) return;
+    setShowConfirm(true);
+  };
+
+  const handleSubmit = async () => {
+    setShowConfirm(false);
     if (!canSubmit) return;
 
     setSubmitting(true);
@@ -374,7 +426,7 @@ export default function RequestPage() {
         <p>สะดวกรวดเร็ว อัปเดตแบบเรียลไทม์</p>
       </header>
 
-      <form onSubmit={handleSubmit} className={styles.formSection}>
+      <form onSubmit={openConfirm} className={styles.formSection}>
         <div className={styles.card}>
           <h3>ข้อมูลผู้เบิก</h3>
           <div className={styles.inputGroup}>
@@ -401,7 +453,7 @@ export default function RequestPage() {
               <option value="" disabled>
                 เลือกแผนก
               </option>
-              {DEPARTMENTS.map((d) => (
+              {departments.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
@@ -499,7 +551,18 @@ export default function RequestPage() {
                     <button type="button" onClick={() => updateQuantity(id, -1)}>
                       -
                     </button>
-                    <span>{entry.quantity}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={entry.maxStock}
+                      value={entry.quantity}
+                      onChange={(e) => setQuantity(id, e.target.value)}
+                      onBlur={() => commitQuantity(id)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className={styles.quantityInput}
+                      aria-label={`จำนวนของ ${entry.name}`}
+                    />
                     <button
                       type="button"
                       onClick={() => updateQuantity(id, 1)}
@@ -530,6 +593,40 @@ export default function RequestPage() {
           {submitting ? 'กำลังส่งคำขอ...' : `ยืนยันการเบิกพัสดุ (${totalItems} ชิ้น)`}
         </button>
       </form>
+
+      {showConfirm && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-title">📋 ยืนยันการส่งใบเบิก</div>
+            <div className="modal-body">
+              คุณกำลังจะส่งใบเบิกพัสดุ <strong>{totalItems}</strong> ชิ้น
+              ({Object.keys(cart).length} รายการ) — <strong>ยืนยันการส่งใบเบิกหรือไม่?</strong>
+              <br />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                หลังกดยืนยันระบบจะส่งใบเบิกไปยังคลังสินค้าเพื่อจัดของให้คุณ
+              </span>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-btn modal-btn-no"
+                onClick={() => setShowConfirm(false)}
+                disabled={submitting}
+              >
+                ไม่ใช่
+              </button>
+              <button
+                type="button"
+                className="modal-btn modal-btn-yes"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
+                ใช่ ส่งใบเบิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

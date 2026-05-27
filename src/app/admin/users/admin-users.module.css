@@ -249,7 +249,8 @@
   margin-bottom: 0.4rem;
 }
 
-.field select {
+.field select,
+.field input[type='text'] {
   width: 100%;
   padding: 0.65rem 0.85rem;
   border: 1.5px solid var(--border-color);
@@ -258,9 +259,15 @@
   outline: none;
   background: #fff;
   cursor: pointer;
+  font-family: inherit;
 }
 
-.field select:focus {
+.field input[type='text'] {
+  cursor: text;
+}
+
+.field select:focus,
+.field input[type='text']:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }

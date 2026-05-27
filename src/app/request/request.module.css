@@ -178,6 +178,33 @@
   text-align: center;
 }
 
+.quantityInput {
+  width: 72px;
+  height: 44px;
+  text-align: center;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--surface-color);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.quantityInput::-webkit-outer-spin-button,
+.quantityInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.quantityInput:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
 .submitBtn {
   position: fixed;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
@@ -521,6 +548,13 @@
   .quantityControl span {
     font-size: 1.05rem;
     flex: 1;
+  }
+  .quantityInput {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+    font-size: 1.1rem;
   }
   .suggestionList {
     max-height: 60vh;

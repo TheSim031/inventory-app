@@ -17,17 +17,42 @@ type MeResponse = {
   oaBasicId: string;
 };
 
+type CustomGroup = {
+  id: string;
+  name: string;
+  icon: string;
+  menuIds: string[];
+  baseRole: string;
+};
+
+type CustomGroupsResponse = { groups: CustomGroup[] };
+
+type Selection =
+  | { type: 'role'; value: UserRole }
+  | { type: 'group'; value: CustomGroup };
+
 export default function RoleSelectClient() {
   const router = useRouter();
 
-  const [selected, setSelected] = useState<UserRole | null>(null);
+  const [selected, setSelected] = useState<Selection | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const { data: me, isLoading } = useSWR<MeResponse>('/api/auth/me', fetcher, {
     onSuccess: (data) => {
-      if (data.role) setSelected((prev) => prev ?? data.role);
+      if (data.role) {
+        setSelected((prev) =>
+          prev ?? { type: 'role', value: data.role as UserRole },
+        );
+      }
     },
   });
+  const { data: groupsData } = useSWR<CustomGroupsResponse>(
+    '/api/admin/groups',
+    fetcher,
+  );
+  const customGroups = groupsData?.groups ?? [];
 
   // Anyone hitting /role-select without a session should bounce back to /
   useEffect(() => {
@@ -41,10 +66,14 @@ export default function RoleSelectClient() {
     setSubmitting(true);
     setError(null);
     try {
+      const payload =
+        selected.type === 'role'
+          ? { role: selected.value }
+          : { customGroupId: selected.value.id };
       const res = await fetch('/api/auth/role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: selected }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as { success?: boolean; home?: string; error?: string };
       if (res.ok && data.home) {
@@ -59,15 +88,20 @@ export default function RoleSelectClient() {
     setSubmitting(false);
   };
 
-  const handleLogout = async () => {
-    if (!confirm('ออกจากระบบ?')) return;
-    // Clear both kinds of session + the role, then send the user home.
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const doLogout = async () => {
+    setLoggingOut(true);
     await Promise.all([
       fetch('/api/auth/line/logout', { method: 'POST' }),
       fetch('/api/auth/logout', { method: 'POST' }),
       fetch('/api/auth/role', { method: 'DELETE' }),
     ]);
     broadcastAuthChanged('logout');
+    setShowLogoutConfirm(false);
+    setLoggingOut(false);
     router.push('/');
     router.refresh();
   };
@@ -102,17 +136,33 @@ export default function RoleSelectClient() {
       <div className={styles.grid}>
         {USER_ROLES.map((role) => {
           const info = ROLE_LABELS[role];
-          const active = selected === role;
+          const active = selected?.type === 'role' && selected.value === role;
           return (
             <button
               key={role}
               type="button"
-              onClick={() => setSelected(role)}
+              onClick={() => setSelected({ type: 'role', value: role })}
               className={`${styles.roleCard} ${active ? styles.roleCardActive : ''}`}
             >
               <div className={styles.roleIcon}>{info.icon}</div>
               <div className={styles.roleTh}>{info.th}</div>
               <div className={styles.roleEn}>{info.en}</div>
+            </button>
+          );
+        })}
+        {customGroups.map((group) => {
+          const active = selected?.type === 'group' && selected.value.id === group.id;
+          return (
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => setSelected({ type: 'group', value: group })}
+              className={`${styles.roleCard} ${active ? styles.roleCardActive : ''}`}
+              title={`กลุ่มกำหนดเอง — ${group.menuIds.length} เมนู`}
+            >
+              <div className={styles.roleIcon}>{group.icon || '👥'}</div>
+              <div className={styles.roleTh}>{group.name}</div>
+              <div className={styles.roleEn}>Custom Group</div>
             </button>
           );
         })}
@@ -128,13 +178,46 @@ export default function RoleSelectClient() {
           {submitting
             ? '⏳ กำลังบันทึก...'
             : selected
-            ? `✓ ยืนยันเข้าใช้งานในฐานะ ${ROLE_LABELS[selected].th}`
+            ? `✓ ยืนยันเข้าใช้งานในฐานะ ${
+                selected.type === 'role'
+                  ? ROLE_LABELS[selected.value].th
+                  : selected.value.name
+              }`
             : 'เลือกกลุ่มก่อนกดยืนยัน'}
         </button>
         <button type="button" onClick={handleLogout} className={styles.btnLogout}>
           ออกจากระบบ
         </button>
       </div>
+
+      {showLogoutConfirm && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-title">🚪 ออกจากระบบ</div>
+            <div className="modal-body">
+              คุณต้องการออกจากระบบใช่หรือไม่?
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-btn modal-btn-no"
+                onClick={() => setShowLogoutConfirm(false)}
+                disabled={loggingOut}
+              >
+                ไม่ใช่
+              </button>
+              <button
+                type="button"
+                className="modal-btn modal-btn-yes"
+                onClick={doLogout}
+                disabled={loggingOut}
+              >
+                {loggingOut ? '⏳ กำลังออก...' : 'ใช่ ออกจากระบบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

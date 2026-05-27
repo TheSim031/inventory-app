@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { MonthlyCleanupBanner } from '@/components/MonthlyCleanupBanner';
 import { ToastContainer, useToast } from '@/components/Toast';
@@ -278,6 +278,54 @@ export default function InspectHistoryPage() {
   );
 }
 
+function ImageLightbox({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className={`${styles.lightboxBackdrop} no-print`}
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        className={styles.lightboxClose}
+        onClick={onClose}
+        aria-label="ปิดรูปภาพ"
+      >
+        ✕
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        className={styles.lightboxImg}
+        src={src}
+        alt={alt}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 function Detail({
   inspection,
   onBack,
@@ -285,6 +333,7 @@ function Detail({
   inspection: Inspection;
   onBack: () => void;
 }) {
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   return (
     <div className={styles.container}>
       <div className={`${styles.toolbar} no-print`}>
@@ -370,15 +419,18 @@ function Detail({
                           <span className={styles.noImg}>— ไม่มี —</span>
                         ) : (
                           imgs.map((img) => (
-                            <a
+                            <button
                               key={img.fileId}
-                              href={img.url}
-                              target="_blank"
-                              rel="noreferrer"
+                              type="button"
+                              className={styles.imgThumbBtn}
+                              onClick={() =>
+                                setLightbox({ src: img.url, alt: img.name || it.name })
+                              }
+                              aria-label="ดูรูปขนาดเต็ม"
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={img.url} alt={img.name || ''} loading="lazy" />
-                            </a>
+                            </button>
                           ))
                         )}
                       </div>
@@ -392,16 +444,44 @@ function Detail({
 
         <section className={styles.printSection}>
           <h2 className={styles.sectionTitle}>🗂 รูปจากคลัง</h2>
-          <RefBlock title="🧾 บิล" images={inspection.warehouseImages.bill} />
-          <RefBlock title="📄 PO / PX" images={inspection.warehouseImages.po} />
-          <RefBlock title="📦 ตัวของ" images={inspection.warehouseImages.items} />
+          <RefBlock
+            title="🧾 บิล"
+            images={inspection.warehouseImages.bill}
+            onOpen={(src, alt) => setLightbox({ src, alt })}
+          />
+          <RefBlock
+            title="📄 PO / PX"
+            images={inspection.warehouseImages.po}
+            onOpen={(src, alt) => setLightbox({ src, alt })}
+          />
+          <RefBlock
+            title="📦 ตัวของ"
+            images={inspection.warehouseImages.items}
+            onOpen={(src, alt) => setLightbox({ src, alt })}
+          />
         </section>
       </div>
+
+      {lightbox && (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }
 
-function RefBlock({ title, images }: { title: string; images: Img[] }) {
+function RefBlock({
+  title,
+  images,
+  onOpen,
+}: {
+  title: string;
+  images: Img[];
+  onOpen: (src: string, alt: string) => void;
+}) {
   return (
     <div className={styles.refBlock}>
       <div className={styles.refTitle}>
@@ -412,10 +492,16 @@ function RefBlock({ title, images }: { title: string; images: Img[] }) {
       ) : (
         <div className={styles.imgRow}>
           {images.map((img) => (
-            <a key={img.fileId} href={img.url} target="_blank" rel="noreferrer">
+            <button
+              key={img.fileId}
+              type="button"
+              className={styles.imgThumbBtn}
+              onClick={() => onOpen(img.url, img.name || title)}
+              aria-label="ดูรูปขนาดเต็ม"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={img.url} alt={img.name || ''} loading="lazy" />
-            </a>
+            </button>
           ))}
         </div>
       )}

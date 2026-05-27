@@ -399,7 +399,11 @@ export default function InPage() {
                             >
                               <div className={styles.suggestionMain}>
                                 <span className={styles.suggestionName}>
-                                  <code>{it.code}</code> — {it.name}
+                                  {/* Desktop: show code badge. Mobile: hidden via CSS so
+                                      category replaces it for better readability. */}
+                                  <code className={styles.suggestionCode}>{it.code}</code>
+                                  <span className={styles.suggestionCodeSep}> — </span>
+                                  <span className={styles.suggestionNameText}>{it.name}</span>
                                 </span>
                                 {it.category && (
                                   <span className={styles.suggestionCategory}>
@@ -429,7 +433,15 @@ export default function InPage() {
                     </div>
                     {row.selected && (
                       <p className={styles.selectedHint}>
-                        ✓ <strong>{row.selected.name}</strong> ({row.selected.code})
+                        ✓ <strong>{row.selected.name}</strong>
+                        <span className={styles.selectedHintCode}>
+                          {' '}({row.selected.code})
+                        </span>
+                        {row.selected.category && (
+                          <span className={styles.selectedHintCategory}>
+                            {' · '}{row.selected.category}
+                          </span>
+                        )}
                       </p>
                     )}
                   </div>

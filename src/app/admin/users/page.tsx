@@ -11,6 +11,16 @@ import { getAllMenuIds, ROLE_MENU_IDS } from '@/lib/menu';
 import { formatThaiDateTime } from '@/lib/dateTime';
 import styles from './admin-users.module.css';
 
+type CustomGroup = {
+  id: string;
+  name: string;
+  icon: string;
+  menuIds: string[];
+  baseRole: string;
+};
+
+type CustomGroupsResponse = { groups: CustomGroup[] };
+
 export const dynamic = 'force-dynamic';
 
 const fetcher = (url: string) =>
@@ -30,6 +40,10 @@ type UsersResponse = { users: AdminUser[]; error?: string };
 
 export default function AdminUsersPage() {
   const { data, mutate, isLoading } = useSWR<UsersResponse>('/api/admin/users', fetcher);
+  const { data: groupsData, mutate: mutateGroups } = useSWR<CustomGroupsResponse>(
+    '/api/admin/groups',
+    fetcher,
+  );
 
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [editRole, setEditRole] = useState<string>('');
@@ -37,6 +51,15 @@ export default function AdminUsersPage() {
   const [useCustomMenus, setUseCustomMenus] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "เพิ่มกลุ่มใหม่" modal state
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupIcon, setGroupIcon] = useState('👥');
+  const [groupBaseRole, setGroupBaseRole] = useState<string>('ASSEMBLY');
+  const [groupMenus, setGroupMenus] = useState<string[]>([]);
+  const [groupSubmitting, setGroupSubmitting] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
 
   const users = useMemo(() => data?.users ?? [], [data?.users]);
 
@@ -95,11 +118,61 @@ export default function AdminUsersPage() {
     setSubmitting(false);
   };
 
-  const handleAddGroup = () => {
-    alert(
-      'การเพิ่ม role ใหม่ ปัจจุบันมี 5 กลุ่มตายตัว: คลัง / จัดซื้อ / ผู้บริหาร / QC / ประกอบ\n' +
-        '\nหากต้องการเพิ่มกลุ่มจริง บอกชื่อกลุ่มใหม่ที่จะเพิ่ม — จะแก้โค้ดให้รองรับใน commit ถัดไป',
+  const openAddGroup = () => {
+    setGroupName('');
+    setGroupIcon('👥');
+    setGroupBaseRole('ASSEMBLY');
+    setGroupMenus([]);
+    setGroupError(null);
+    setGroupModalOpen(true);
+  };
+
+  const closeAddGroup = () => {
+    if (groupSubmitting) return;
+    setGroupModalOpen(false);
+    setGroupError(null);
+  };
+
+  const toggleGroupMenu = (id: string) => {
+    setGroupMenus((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
     );
+  };
+
+  const submitGroup = async () => {
+    const name = groupName.trim();
+    if (!name) {
+      setGroupError('กรุณาระบุชื่อกลุ่ม');
+      return;
+    }
+    if (groupMenus.length === 0) {
+      setGroupError('กรุณาเลือกเมนูที่กลุ่มนี้เข้าถึงได้อย่างน้อย 1 รายการ');
+      return;
+    }
+    setGroupSubmitting(true);
+    setGroupError(null);
+    try {
+      const res = await fetch('/api/admin/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          icon: groupIcon,
+          menuIds: groupMenus,
+          baseRole: groupBaseRole,
+        }),
+      });
+      if (res.ok) {
+        await mutateGroups();
+        setGroupModalOpen(false);
+      } else {
+        const j = await res.json().catch(() => ({}));
+        setGroupError(j.error || 'สร้างกลุ่มไม่สำเร็จ');
+      }
+    } catch {
+      setGroupError('เชื่อมต่อระบบไม่ได้');
+    }
+    setGroupSubmitting(false);
   };
 
   const allMenus = getAllMenuIds(false);
@@ -142,7 +215,7 @@ export default function AdminUsersPage() {
       <section className={styles.tableCard}>
         <div className={styles.tableHeader}>
           <h2>รายชื่อผู้ใช้งาน</h2>
-          <button type="button" onClick={handleAddGroup} className={styles.btnAddGroup}>
+          <button type="button" onClick={openAddGroup} className={styles.btnAddGroup}>
             + เพิ่มกลุ่มใหม่
           </button>
         </div>
@@ -218,6 +291,154 @@ export default function AdminUsersPage() {
           )}
         </div>
       </section>
+
+      {groupsData?.groups && groupsData.groups.length > 0 && (
+        <section className={styles.tableCard}>
+          <div className={styles.tableHeader}>
+            <h2>กลุ่มกำหนดเอง ({groupsData.groups.length})</h2>
+          </div>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>กลุ่ม</th>
+                  <th>Base Role</th>
+                  <th>เมนูที่อนุญาต</th>
+                  <th>สร้างเมื่อ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupsData.groups.map((g) => (
+                  <tr key={g.id}>
+                    <td>
+                      <div className={styles.userCell}>
+                        <span style={{ marginRight: '0.4rem' }}>{g.icon || '👥'}</span>
+                        {g.name}
+                      </div>
+                      <div className={styles.userIdHint}>{g.id}</div>
+                    </td>
+                    <td>
+                      {isUserRole(g.baseRole)
+                        ? `${ROLE_LABELS[g.baseRole as UserRole].icon} ${ROLE_LABELS[g.baseRole as UserRole].th}`
+                        : g.baseRole || '-'}
+                    </td>
+                    <td>
+                      {g.menuIds.map((m) => (
+                        <span key={m} className={styles.tag}>
+                          {m}
+                        </span>
+                      ))}
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                      —
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {groupModalOpen && (
+        <div className={styles.drawerBackdrop} onClick={closeAddGroup}>
+          <div
+            className={styles.drawer}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>+ เพิ่มกลุ่มผู้ใช้งานใหม่</h3>
+            <div className={styles.drawerSub}>
+              ตั้งชื่อกลุ่มและเลือกเมนูที่ให้กลุ่มนี้เข้าถึงได้ — กลุ่มใหม่จะปรากฏใน
+              dropdown ของหน้า /role-select ทันที
+            </div>
+
+            {groupError && <div className={styles.errorBanner}>{groupError}</div>}
+
+            <div className={styles.field}>
+              <label>ชื่อกลุ่ม *</label>
+              <input
+                type="text"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="เช่น Marketing, ฝ่ายขาย, ผู้ตรวจ"
+                autoFocus
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label>ไอคอน (อีโมจิ)</label>
+              <input
+                type="text"
+                value={groupIcon}
+                onChange={(e) => setGroupIcon(e.target.value)}
+                placeholder="👥"
+                maxLength={4}
+                style={{ width: '6rem' }}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label>Base Role (สำหรับสิทธิ์ API)</label>
+              <select
+                value={groupBaseRole}
+                onChange={(e) => setGroupBaseRole(e.target.value)}
+              >
+                {USER_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r].icon} {ROLE_LABELS[r].th}
+                  </option>
+                ))}
+              </select>
+              <p className={styles.menuHint}>
+                กลุ่มกำหนดเองจะใช้สิทธิ์ระดับ API ตาม base role นี้
+              </p>
+            </div>
+
+            <div className={styles.field}>
+              <label>เมนูที่อนุญาต *</label>
+              <div className={styles.menuList}>
+                {allMenus.map((m) => (
+                  <label
+                    key={m.id}
+                    className={`${styles.menuRow}${m.parentLabel ? ' ' + styles.menuRowChild : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={groupMenus.includes(m.id)}
+                      onChange={() => toggleGroupMenu(m.id)}
+                    />
+                    <span>
+                      {m.parentLabel ? `↳ ${m.label}` : m.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className={styles.menuHint}>
+                เลือกแล้ว: {groupMenus.join(', ') || '(ยังไม่เลือก)'}
+              </p>
+            </div>
+
+            <div className={styles.drawerActions}>
+              <button
+                type="button"
+                onClick={closeAddGroup}
+                disabled={groupSubmitting}
+                className={styles.btnCancel}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={submitGroup}
+                disabled={groupSubmitting}
+                className={styles.btnSave}
+              >
+                {groupSubmitting ? '⏳ กำลังบันทึก...' : '✓ บันทึกกลุ่มใหม่'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className={styles.drawerBackdrop} onClick={closeEditor}>

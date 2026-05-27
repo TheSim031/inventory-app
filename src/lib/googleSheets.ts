@@ -358,6 +358,294 @@ export async function updateUserCustomMenus(
   }
 }
 
+/* ─── Custom groups sheet helpers ─── */
+/**
+ * Admin-defined user groups beyond the 5 built-in roles. Each group is a
+ * preset of (display name, allowed menu ids, base role for server-side API
+ * guards). When a LINE user picks a custom group at /role-select, the
+ * server-side handler writes the group's menuIds into the user's
+ * customMenus column and sets the user's role cookie to baseRole so
+ * existing requireRoles() guards continue to work.
+ */
+const CUSTOM_GROUPS_SHEET_NAME = 'กลุ่มกำหนดเอง';
+const FALLBACK_CUSTOM_GROUPS_TABS = ['กลุ่มกำหนดเอง', 'CustomGroups', 'Groups'];
+
+export type CustomGroupRow = {
+  sheetRow: number;
+  id: string;
+  name: string;
+  icon: string;
+  menuIds: string[];
+  baseRole: string;
+  createdAt: string;
+  createdBy: string;
+};
+
+async function ensureCustomGroupsSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_CUSTOM_GROUPS_TABS) {
+      if (tabs.includes(f)) return f;
+    }
+  }
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: CUSTOM_GROUPS_SHEET_NAME } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${CUSTOM_GROUPS_SHEET_NAME}!A1:G2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — กลุ่มผู้ใช้งานที่กำหนดเอง'],
+          [
+            'รหัส',
+            'ชื่อกลุ่ม',
+            'ไอคอน',
+            'เมนูที่อนุญาต (JSON)',
+            'Base Role',
+            'สร้างเมื่อ',
+            'สร้างโดย',
+          ],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return CUSTOM_GROUPS_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureCustomGroupsSheet):', error);
+    return null;
+  }
+}
+
+export async function readCustomGroupsSheet(): Promise<CustomGroupRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureCustomGroupsSheet();
+  if (!tab) return null;
+
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:G`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readCustomGroupsSheet):', error);
+    return null;
+  }
+
+  if (rawRows.length <= 1) return [];
+  const result: CustomGroupRow[] = [];
+  for (let i = 2; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const id = String(row[0] ?? '').trim();
+    if (!id) continue;
+    let menuIds: string[] = [];
+    try {
+      const parsed = JSON.parse(String(row[3] ?? '[]'));
+      if (Array.isArray(parsed)) {
+        menuIds = parsed.filter((v) => typeof v === 'string');
+      }
+    } catch {
+      menuIds = [];
+    }
+    result.push({
+      sheetRow: i + 1,
+      id,
+      name: String(row[1] ?? '').trim(),
+      icon: String(row[2] ?? '').trim(),
+      menuIds,
+      baseRole: String(row[4] ?? '').trim(),
+      createdAt: String(row[5] ?? '').trim(),
+      createdBy: String(row[6] ?? '').trim(),
+    });
+  }
+  return result;
+}
+
+export async function appendCustomGroup(args: {
+  id: string;
+  name: string;
+  icon: string;
+  menuIds: string[];
+  baseRole: string;
+  createdBy: string;
+}): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureCustomGroupsSheet();
+  if (!tab) return false;
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tab}!A:G`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [
+          [
+            args.id,
+            args.name,
+            args.icon,
+            JSON.stringify(args.menuIds),
+            args.baseRole,
+            new Date().toISOString(),
+            args.createdBy,
+          ],
+        ],
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (appendCustomGroup):', error);
+    return false;
+  }
+}
+
+/* ─── Departments sheet helpers ─── */
+/**
+ * Editable list of departments shown in the /request page dropdown. The
+ * sheet seeds itself with the legacy hard-coded list on first read so the
+ * UI doesn't regress when the sheet is freshly created.
+ */
+const DEPARTMENTS_SHEET_NAME = 'แผนก';
+const FALLBACK_DEPARTMENTS_TABS = ['แผนก', 'Departments'];
+
+const DEFAULT_DEPARTMENTS = [
+  'แผนกประกอบ Basevalue',
+  'แผนกประกอบใหญ่',
+  'แผนกประกอบ Subtank',
+  'แผนก CNC',
+  'แผนกฟินิช - ชุบ - ขัดกระบอกเงา',
+  'แผนกกลึง',
+  'แผนกเชื่อม',
+  'แผนกTracking',
+  'อื่นๆ',
+];
+
+export type DepartmentRow = {
+  sheetRow: number;
+  name: string;
+};
+
+async function ensureDepartmentsSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_DEPARTMENTS_TABS) {
+      if (tabs.includes(f)) return f;
+    }
+  }
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: DEPARTMENTS_SHEET_NAME } } },
+        ],
+      },
+    });
+    const seedRows = [
+      ['PIONEER — รายชื่อแผนก'],
+      ['ชื่อแผนก'],
+      ...DEFAULT_DEPARTMENTS.map((n) => [n]),
+    ];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${DEPARTMENTS_SHEET_NAME}!A1:A${seedRows.length}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: seedRows },
+    });
+    actualTabsCache = null;
+    return DEPARTMENTS_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureDepartmentsSheet):', error);
+    return null;
+  }
+}
+
+export async function readDepartmentsSheet(): Promise<DepartmentRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureDepartmentsSheet();
+  if (!tab) return null;
+
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:A`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readDepartmentsSheet):', error);
+    return null;
+  }
+
+  if (rawRows.length <= 1) return [];
+  const result: DepartmentRow[] = [];
+  for (let i = 2; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const name = String(row[0] ?? '').trim();
+    if (!name) continue;
+    result.push({ sheetRow: i + 1, name });
+  }
+  return result;
+}
+
+export async function appendDepartment(name: string): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureDepartmentsSheet();
+  if (!tab) return false;
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tab}!A:A`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [[name.trim()]] },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (appendDepartment):', error);
+    return false;
+  }
+}
+
+export async function updateDepartment(
+  sheetRow: number,
+  name: string,
+): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureDepartmentsSheet();
+  if (!tab) return false;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!A${sheetRow}:A${sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[name.trim()]] },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (updateDepartment):', error);
+    return false;
+  }
+}
+
 /* ─── Items sheet helpers ─── */
 
 export type SheetItemRow = {

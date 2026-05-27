@@ -47,6 +47,8 @@ type PatchBody = {
   picker?: string;
   reason?: string;
   itemStatuses?: ItemPickStatus[];
+  /** Warehouse-edited actual quantities per line, indexed like target.items */
+  pickedQuantities?: number[];
 };
 
 export async function GET(
@@ -166,8 +168,42 @@ export async function PATCH(
         );
       }
     }
-    itemsToIssue = target.items.filter((_, i) => statuses[i] === 'PICKED');
-    outOfStockItems = target.items.filter((_, i) => statuses[i] === 'OUT_OF_STOCK');
+
+    // Warehouse-edited quantities (optional). When present and valid for a
+    // PICKED line, the OUT row + LINE notification use the edited number
+    // instead of the originally-requested quantity. A line with picked qty
+    // of 0 is coerced into OUT_OF_STOCK so we never append a 0-qty OUT row.
+    const editedQtys = Array.isArray(body.pickedQuantities)
+      ? body.pickedQuantities
+      : null;
+    if (editedQtys && editedQtys.length !== target.items.length) {
+      return NextResponse.json(
+        { error: 'pickedQuantities ต้องมีจำนวนเท่ากับรายการในใบเบิก' },
+        { status: 400 },
+      );
+    }
+
+    const picked: RequisitionItem[] = [];
+    const outItems: RequisitionItem[] = [];
+    for (let i = 0; i < target.items.length; i++) {
+      const orig = target.items[i];
+      if (statuses[i] !== 'PICKED') {
+        outItems.push(orig);
+        continue;
+      }
+      const rawEdited = editedQtys ? editedQtys[i] : orig.quantity;
+      const editedQty = Number.isFinite(rawEdited)
+        ? Math.max(0, Math.floor(rawEdited as number))
+        : orig.quantity;
+      if (editedQty <= 0) {
+        // Treat 0 picked as OUT_OF_STOCK so we don't append a 0-qty row.
+        outItems.push(orig);
+        continue;
+      }
+      picked.push({ code: orig.code, name: orig.name, quantity: editedQty });
+    }
+    itemsToIssue = picked;
+    outOfStockItems = outItems;
 
     const stockErr = await validatePickedStock(itemsToIssue);
     if (stockErr) {
