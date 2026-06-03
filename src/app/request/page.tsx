@@ -10,6 +10,7 @@ import {
   type ApiError,
 } from '@/lib/authClient';
 import { bangkokTodayISO } from '@/lib/dateTime';
+import { BarcodeScanner } from '@/components/BarcodeScanner';
 import styles from './request.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,8 @@ export default function RequestPage() {
   }));
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -190,6 +193,29 @@ export default function RequestPage() {
     });
     setSearch('');
     setShowSuggestions(false);
+  };
+
+  // Scanned barcode/QR → match an item by exact code (case-insensitive). On a
+  // hit we drop it straight into the cart; otherwise we prefill the search box
+  // so the user can see there was no match and adjust.
+  const handleScan = (value: string) => {
+    setScanOpen(false);
+    const code = value.trim().toLowerCase();
+    const match = (items ?? []).find(
+      (it) => (it.code || '').trim().toLowerCase() === code,
+    );
+    if (match) {
+      if (match.stock <= 0) {
+        setScanMsg(`พบ "${match.name}" แต่สินค้าหมด (คงเหลือ 0)`);
+        return;
+      }
+      addToCart(match);
+      setScanMsg(`เพิ่ม "${match.name}" จากการสแกนแล้ว`);
+    } else {
+      setSearch(value.trim());
+      setShowSuggestions(true);
+      setScanMsg(`ไม่พบรหัส "${value.trim()}" — ลองค้นหาด้วยตนเอง`);
+    }
   };
 
   const updateQuantity = (id: string, delta: number) => {
@@ -509,7 +535,21 @@ export default function RequestPage() {
           <h3>เลือกพัสดุ</h3>
 
           <div className={styles.inputGroup} ref={searchBoxRef}>
-            <label>ค้นหารายการสินค้า</label>
+            <div className={styles.searchLabelRow}>
+              <label>ค้นหารายการสินค้า</label>
+              <button
+                type="button"
+                className={styles.scanBtn}
+                onClick={() => {
+                  setScanMsg(null);
+                  setScanOpen(true);
+                }}
+                title="สแกนบาร์โค้ด / QR เพื่อเพิ่มสินค้า"
+              >
+                📷 สแกน
+              </button>
+            </div>
+            {scanMsg && <div className={styles.scanMsg}>{scanMsg}</div>}
             <div className={styles.searchBox}>
               <input
                 type="text"
@@ -558,6 +598,14 @@ export default function RequestPage() {
               )}
             </div>
           </div>
+
+          {scanOpen && (
+            <BarcodeScanner
+              title="สแกนเพื่อเพิ่มสินค้า"
+              onDetect={handleScan}
+              onClose={() => setScanOpen(false)}
+            />
+          )}
 
           {Object.keys(cart).length > 0 ? (
             <div className={styles.itemList}>

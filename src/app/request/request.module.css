@@ -307,6 +307,39 @@
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
+.searchLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scanBtn {
+  flex-shrink: 0;
+  padding: 0.4rem 0.85rem;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.scanBtn:hover {
+  background: var(--primary-hover);
+}
+
+.scanMsg {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--primary-soft, rgba(220, 38, 38, 0.08));
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
 .searchBox {
   position: relative;
 }
