@@ -265,6 +265,25 @@
   color: #fff;
 }
 
+.exportBtn {
+  padding: 0.55rem 1rem;
+  background: transparent;
+  color: var(--text-primary);
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.exportBtn:hover {
+  background: var(--text-primary);
+  color: #fff;
+}
+
 .tableCard {
   background: var(--surface-color);
   border: 2px solid var(--text-primary);

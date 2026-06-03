@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { ToastContainer, useToast } from '@/components/Toast';
 import { broadcastAuthChanged, fetchJson, isAuthStatus, type ApiError } from '@/lib/authClient';
+import { downloadCsv, csvDateStamp } from '@/lib/csv';
 import type { LimitStockGetResponse, LimitStockItem } from '@/app/api/limit-stock/route';
 import styles from './limit-stock.module.css';
 
@@ -39,7 +40,7 @@ export default function LimitStockPage() {
   const [saving, setSaving] = useState(false);
   const [notifying, setNotifying] = useState(false);
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const defaultThreshold = data?.defaultThreshold ?? 500;
 
   const categories = useMemo(() => {
@@ -147,6 +148,33 @@ export default function LimitStockPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const STATUS_LABEL: Record<StockStatus, string> = {
+    zero: 'หมดคลัง',
+    low: 'ต่ำกว่าเกณฑ์',
+    off: 'ปิดแจ้งเตือน',
+    ok: 'ปกติ',
+  };
+
+  const handleExportCsv = () => {
+    if (filteredItems.length === 0) {
+      addToast('ไม่มีรายการให้ส่งออก', 'error');
+      return;
+    }
+    const rows = filteredItems.map((it) => [
+      it.code,
+      it.name,
+      it.category || '',
+      it.stock,
+      STATUS_LABEL[statusOf(it)],
+      it.threshold,
+    ]);
+    downloadCsv(
+      `limit-stock-${csvDateStamp()}.csv`,
+      ['รหัส', 'ชื่อรายการ', 'หมวดหมู่', 'คงเหลือ', 'สถานะ', 'เกณฑ์ขั้นต่ำ'],
+      rows,
+    );
   };
 
   const handleNotifyNow = async () => {
@@ -278,6 +306,14 @@ export default function LimitStockPage() {
         <div className={styles.spacer} />
 
         <div className={styles.bulkActions}>
+          <button
+            type="button"
+            className={styles.exportBtn}
+            onClick={handleExportCsv}
+            title="ส่งออกรายการที่กรองอยู่เป็นไฟล์ CSV (เปิดด้วย Excel ได้)"
+          >
+            ⬇ ส่งออก CSV ({filteredItems.length})
+          </button>
           {dirtyCodes.length > 0 && (
             <>
               <span className={styles.dirtyBadge}>

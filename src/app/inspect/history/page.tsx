@@ -4,6 +4,7 @@ import useSWR from 'swr';
 import { MonthlyCleanupBanner } from '@/components/MonthlyCleanupBanner';
 import { ToastContainer, useToast } from '@/components/Toast';
 import { formatThaiDateTime } from '@/lib/dateTime';
+import { downloadCsv, csvDateStamp } from '@/lib/csv';
 import styles from './history.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -49,8 +50,28 @@ export default function InspectHistoryPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState('');
 
   const list = useMemo(() => data ?? [], [data]);
+
+  // Visible subset after the search filter: match PO ref, company, inspector,
+  // or any item code/name. Selection + delete operate on the visible rows.
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((r) => {
+      const haystack = [
+        r.poRef,
+        r.company,
+        r.inspector,
+        ...r.items.flatMap((it) => [it.code, it.name]),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [list, search]);
+
   const detail = useMemo(
     () => list.find((r) => r.id === selectedId) ?? null,
     [list, selectedId],
@@ -65,7 +86,8 @@ export default function InspectHistoryPage() {
     return <Detail inspection={detail} onBack={() => setSelectedId(null)} />;
   }
 
-  const allChecked = list.length > 0 && selected.size === list.length;
+  const allChecked =
+    visible.length > 0 && visible.every((r) => selected.has(r.id));
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -75,9 +97,47 @@ export default function InspectHistoryPage() {
       return next;
     });
 
+  // Select-all toggles only the currently visible (filtered) rows so a search
+  // can be used to bulk-select a subset without touching hidden ones.
   const toggleAll = () => {
-    if (allChecked) setSelected(new Set());
-    else setSelected(new Set(list.map((r) => r.id)));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allChecked) visible.forEach((r) => next.delete(r.id));
+      else visible.forEach((r) => next.add(r.id));
+      return next;
+    });
+  };
+
+  // Export the visible (filtered) inspections as CSV — one row per item so the
+  // sheet is pivot/filter friendly. Available to every viewer, not just delete.
+  const handleExportCsv = () => {
+    const rows: Array<Array<unknown>> = [];
+    for (const r of visible) {
+      const inspectedAt = r.inspectedAt
+        ? formatThaiDateTime(r.inspectedAt)
+        : '';
+      if (r.items.length === 0) {
+        rows.push([r.id, r.poRef, r.company, r.inspector, inspectedAt, '', '', '']);
+        continue;
+      }
+      for (const it of r.items) {
+        rows.push([
+          r.id,
+          r.poRef,
+          r.company,
+          r.inspector,
+          inspectedAt,
+          it.code,
+          it.name,
+          it.quantity,
+        ]);
+      }
+    }
+    downloadCsv(
+      `inspection-history-${csvDateStamp()}.csv`,
+      ['ID', 'PO/PX', 'บริษัท', 'ผู้ตรวจ', 'วันที่ตรวจ', 'รหัส', 'ชื่อรายการ', 'จำนวน'],
+      rows,
+    );
   };
 
   const doDelete = async () => {
@@ -144,10 +204,45 @@ export default function InspectHistoryPage() {
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>
           ✅ รายการที่ตรวจสอบแล้ว
-          <span className={styles.countPill}>{list.length}</span>
+          <span className={styles.countPill}>
+            {search.trim() ? `${visible.length}/${list.length}` : list.length}
+          </span>
         </h2>
 
-        {canDelete && list.length > 0 && (
+        {list.length > 0 && (
+          <div className={styles.searchRow}>
+            <div className={styles.searchBar}>
+              <input
+                type="text"
+                className={styles.searchInput}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="🔍 ค้นหา: PO/PX / บริษัท / ผู้ตรวจ / รหัส-ชื่อสินค้า"
+              />
+              {search && (
+                <button
+                  type="button"
+                  className={styles.searchClear}
+                  onClick={() => setSearch('')}
+                  aria-label="ล้างคำค้นหา"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className={styles.exportBtn}
+              onClick={handleExportCsv}
+              disabled={visible.length === 0}
+              title="ส่งออกรายการที่แสดงอยู่เป็นไฟล์ CSV (เปิดด้วย Excel ได้)"
+            >
+              ⬇ ส่งออก CSV ({visible.length})
+            </button>
+          </div>
+        )}
+
+        {canDelete && visible.length > 0 && (
           <div className={styles.cleanupToolbar}>
             <label className={styles.selectAllLabel}>
               <input
@@ -155,7 +250,7 @@ export default function InspectHistoryPage() {
                 checked={allChecked}
                 onChange={toggleAll}
               />
-              <span>เลือกทั้งหมด ({list.length})</span>
+              <span>เลือกทั้งหมด ({visible.length})</span>
             </label>
             <div className={styles.toolbarRight}>
               <span className={styles.selectedCount}>
@@ -177,9 +272,11 @@ export default function InspectHistoryPage() {
           <p className={styles.empty}>กำลังโหลด...</p>
         ) : list.length === 0 ? (
           <p className={styles.empty}>ยังไม่มีประวัติการตรวจสอบ</p>
+        ) : visible.length === 0 ? (
+          <p className={styles.empty}>ไม่พบรายการที่ตรงกับ &quot;{search.trim()}&quot;</p>
         ) : (
           <div className={styles.list}>
-            {list.map((row) => {
+            {visible.map((row) => {
               const isSel = selected.has(row.id);
               return (
                 <div

@@ -85,6 +85,87 @@
   padding: 2rem 1rem;
 }
 
+.searchRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.searchRow .searchBar {
+  flex: 1;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.exportBtn {
+  padding: 0.55rem 1rem;
+  background: transparent;
+  color: var(--text-primary);
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.exportBtn:hover:not(:disabled) {
+  background: var(--text-primary);
+  color: #fff;
+}
+
+.exportBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.searchBar {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 0.8rem 2.5rem 0.8rem 1rem;
+  font-size: 0.95rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.searchClear {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 9999px;
+  background: var(--text-muted);
+  color: #fff;
+  font-size: 0.8rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.searchClear:hover {
+  background: var(--text-primary);
+}
+
 .list { display: flex; flex-direction: column; gap: 0.75rem; }
 
 /* .row is now a layout container; .rowBody (button child) is the click
