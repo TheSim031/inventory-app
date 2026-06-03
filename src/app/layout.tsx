@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { MainNav } from "@/components/MainNav";
 import { CreatorCredit } from "@/components/CreatorCredit";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,6 +18,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ระบบจัดการคลังสินค้า | Pioneer Engineering International",
   description: "ระบบจัดการคลังสินค้าและเบิกจ่ายพัสดุ — Pioneer Engineering International",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Pioneer คลัง",
+  },
+  icons: {
+    apple: "/logo.jpg",
+  },
 };
 
 export const viewport: Viewport = {
@@ -50,6 +60,7 @@ export default function RootLayout({
         <MainNav />
         <main className="app-main">{children}</main>
         <CreatorCredit />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
