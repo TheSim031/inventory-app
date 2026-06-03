@@ -30,6 +30,12 @@ const ROLE_COOKIE = 'user_role';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 const RULES: Rule[] = [
+  // Dashboard overview — same audience as the menu entry (Warehouse,
+  // Purchasing, Executive). Creator/Admin bypass the role check below.
+  {
+    match: (p) => p === '/dashboard' || p.startsWith('/dashboard/'),
+    allowed: ['WAREHOUSE', 'PURCHASING', 'EXECUTIVE'],
+  },
   // Inspection history — read-only for everyone except Assembly.
   {
     match: (p) => p === '/inspect/history' || p.startsWith('/inspect/history/'),
@@ -197,6 +203,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/home/:path*',
+    '/dashboard/:path*',
     '/in/:path*',
     '/request/:path*',
     '/limit-stock/:path*',

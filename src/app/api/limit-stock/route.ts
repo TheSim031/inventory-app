@@ -7,6 +7,7 @@ import {
   type ThresholdUpdate,
 } from '@/lib/googleSheets';
 import { getSessionContext, requireRoles } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -109,5 +110,14 @@ export async function PUT(request: NextRequest) {
       { status: 503 },
     );
   }
+
+  recordAudit(request, 'THRESHOLD_UPDATE', {
+    target: updates.length === 1 ? updates[0].code : `${updates.length} รายการ`,
+    detail:
+      updates.length <= 5
+        ? updates.map((u) => `${u.code}=${u.threshold}`).join(', ')
+        : `แก้ไขเกณฑ์ ${updates.length} รายการ`,
+  });
+
   return NextResponse.json({ success: true, ...result });
 }

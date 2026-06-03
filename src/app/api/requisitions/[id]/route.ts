@@ -10,6 +10,7 @@ import {
 import { sendLineNotification } from '@/lib/lineNotify';
 import { sendUrgentZeroStockAlert } from '@/lib/limitStockNotify';
 import { getSessionContext, requireRoles } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -134,6 +135,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'ปฏิเสธใบเบิกไม่สำเร็จ' }, { status: 500 });
     }
 
+    recordAudit(request, 'REQ_REJECTED', {
+      target: id,
+      detail: `โดย ${picker} · เหตุผล: ${reason}`,
+    });
+
     sendLineNotification('REQ_REJECTED', {
       id,
       requester: target.requester,
@@ -244,6 +250,13 @@ export async function PATCH(
       );
     }
   }
+
+  recordAudit(request, 'PICK_COMPLETE', {
+    target: id,
+    detail: `โดย ${picker} · จัด ${itemsToIssue.length} รายการ${
+      outOfStockItems.length ? ` · ขาด ${outOfStockItems.length}` : ''
+    }`,
+  });
 
   sendLineNotification('PICK_COMPLETE', {
     id,

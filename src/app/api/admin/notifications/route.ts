@@ -14,6 +14,7 @@ import {
   NOTIFICATION_TYPES,
 } from '@/lib/notificationConfig';
 import { getSessionContext } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 import { USER_ROLES } from '@/lib/userRole';
 
 export const dynamic = 'force-dynamic';
@@ -128,6 +129,11 @@ export async function PUT(request: NextRequest) {
       { status: 500 },
     );
   }
+
+  recordAudit(request, 'NOTIF_GROUP_UPDATE', {
+    detail: `บันทึกสิทธิ์กลุ่ม ${deviations.length} รายการที่ต่างจากค่าเริ่มต้น`,
+  });
+
   return NextResponse.json({ success: true, deviations: deviations.length });
 }
 
@@ -210,5 +216,11 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+
+  recordAudit(request, 'NOTIF_USER_UPDATE', {
+    target: displayName || lineUserId,
+    detail: `ตั้งค่าเฉพาะบุคคล ${Object.keys(overrides).length} ประเภท`,
+  });
+
   return NextResponse.json({ success: true });
 }

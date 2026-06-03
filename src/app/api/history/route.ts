@@ -9,6 +9,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { sendLineNotification } from '@/lib/lineNotify';
 import { sendUrgentZeroStockAlert } from '@/lib/limitStockNotify';
 import { requireAuth, requireRoles } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -158,6 +159,11 @@ export async function POST(request: NextRequest) {
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: historyValues },
+    });
+
+    recordAudit(request, type === 'IN' ? 'IN_RECORDED' : 'OUT_RECORDED', {
+      target: type === 'IN' ? (poRef || '').trim() : (department || '').trim(),
+      detail: `${recorder.trim()} · ${items.length} รายการ`,
     });
 
     // lineUserId is read from the session cookie at notification time only —

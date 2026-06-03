@@ -6,6 +6,7 @@ import {
 } from '@/lib/googleSheets';
 import { sendLineNotification } from '@/lib/lineNotify';
 import { requireRoles } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 import { isoForPickedDate } from '@/lib/dateTime';
 
 export const dynamic = 'force-dynamic';
@@ -113,6 +114,11 @@ export async function POST(request: NextRequest) {
   if (!ok) {
     return NextResponse.json({ error: 'บันทึกคำขอเบิกไม่สำเร็จ' }, { status: 500 });
   }
+
+  recordAudit(request, 'REQ_SUBMITTED', {
+    target: id,
+    detail: `${requester} · ${department} · ${sanitizedItems.length} รายการ`,
+  });
 
   sendLineNotification('REQ_SUBMITTED', {
     id,

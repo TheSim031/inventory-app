@@ -13,6 +13,7 @@ import { deleteDriveFile } from '@/lib/googleDrive';
 import { deleteBlob, isBlobUrl } from '@/lib/blob';
 import { sendLineToRoles } from '@/lib/lineNotify';
 import { requireAuth, requireRoles, getSessionContext } from '@/lib/auth';
+import { recordAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -328,6 +329,13 @@ export async function DELETE(request: NextRequest) {
   }
 
   const deleted = await deleteInspectionRows(targets.map((r) => r.id));
+
+  if (deleted.length > 0) {
+    recordAudit(request, 'INSPECT_DELETE', {
+      target: `${deleted.length} รายการ`,
+      detail: deleted.slice(0, 10).join(', '),
+    });
+  }
 
   // Dedup by fileId, then dispatch each image to whichever backend hosts
   // it. Await all cleanup so serverless runtimes don't terminate mid-flight.

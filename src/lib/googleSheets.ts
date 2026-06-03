@@ -2086,3 +2086,121 @@ export async function replaceNotifUserOverrides(args: {
     return false;
   }
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Audit log — append-only "who did what, when". Stored in its own tab so it
+// never touches the stock / history data. Best-effort: a failed write is
+// logged and swallowed by callers so it can never block a user action.
+// ────────────────────────────────────────────────────────────────────────────
+const AUDIT_SHEET_NAME = 'บันทึกการใช้งาน';
+const FALLBACK_AUDIT_TABS = ['บันทึกการใช้งาน', 'AuditLog'];
+
+export type AuditLogEntry = {
+  actor: string;
+  role: string;
+  action: string;
+  target?: string;
+  detail?: string;
+};
+
+export type AuditLogRow = AuditLogEntry & { timestamp: string };
+
+async function ensureAuditSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_AUDIT_TABS) if (tabs.includes(f)) return f;
+  }
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: AUDIT_SHEET_NAME } } }],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${AUDIT_SHEET_NAME}!A1:F2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — บันทึกการใช้งานระบบ (Audit Log) — เพิ่มต่อท้ายเท่านั้น'],
+          ['เวลา', 'ผู้ใช้', 'กลุ่ม', 'การกระทำ', 'เป้าหมาย', 'รายละเอียด'],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return AUDIT_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureAuditSheet):', error);
+    return null;
+  }
+}
+
+/** Append one audit row. Returns false on any failure (caller swallows). */
+export async function appendAuditLog(entry: AuditLogEntry): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureAuditSheet();
+  if (!tab) return false;
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tab}!A:F`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [
+          [
+            new Date().toISOString(),
+            (entry.actor || '').trim(),
+            (entry.role || '').trim(),
+            (entry.action || '').trim(),
+            (entry.target || '').trim(),
+            (entry.detail || '').trim(),
+          ],
+        ],
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (appendAuditLog):', error);
+    return false;
+  }
+}
+
+/** Read the most recent audit rows (newest first), capped at `limit`. */
+export async function readAuditLog(limit = 300): Promise<AuditLogRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureAuditSheet();
+  if (!tab) return null;
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:F`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readAuditLog):', error);
+    return null;
+  }
+  if (rawRows.length <= 2) return [];
+  const result: AuditLogRow[] = [];
+  for (let i = 2; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const timestamp = String(row[0] ?? '').trim();
+    if (!timestamp) continue;
+    result.push({
+      timestamp,
+      actor: String(row[1] ?? ''),
+      role: String(row[2] ?? ''),
+      action: String(row[3] ?? ''),
+      target: String(row[4] ?? ''),
+      detail: String(row[5] ?? ''),
+    });
+  }
+  return result.reverse().slice(0, limit); // newest first
+}
