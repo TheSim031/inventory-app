@@ -21,6 +21,12 @@ export type MenuItem = {
  */
 export const MENU_ITEMS: MenuItem[] = [
   {
+    id: 'dashboard',
+    label: 'แดชบอร์ด',
+    icon: '📊',
+    href: '/dashboard',
+  },
+  {
     id: 'warehouse',
     label: 'คลังสินค้า',
     icon: '📦',
@@ -91,9 +97,9 @@ export const MENU_ITEMS: MenuItem[] = [
  *   ASSEMBLY   : คลัง (เบิก)
  */
 export const ROLE_MENU_IDS: Record<UserRole, string[]> = {
-  WAREHOUSE:  ['warehouse', 'in', 'pick', 'request', 'limit-stock', 'inspect', 'inspect-history'],
-  PURCHASING: ['warehouse', 'request', 'limit-stock', 'inspect', 'inspect-history'],
-  EXECUTIVE:  ['inspect', 'inspect-history'],
+  WAREHOUSE:  ['dashboard', 'warehouse', 'in', 'pick', 'request', 'limit-stock', 'inspect', 'inspect-history'],
+  PURCHASING: ['dashboard', 'warehouse', 'request', 'limit-stock', 'inspect', 'inspect-history'],
+  EXECUTIVE:  ['dashboard', 'inspect', 'inspect-history'],
   QC:         ['inspect', 'inspect-do', 'inspect-history'],
   ASSEMBLY:   ['warehouse', 'request'],
 };
