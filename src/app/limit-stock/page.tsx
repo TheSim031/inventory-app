@@ -11,8 +11,13 @@ export const dynamic = 'force-dynamic';
 const fetcher = <T,>(url: string) => fetchJson<T>(url);
 
 type FilterMode = 'all' | 'below' | 'zero' | 'custom';
+type StockStatus = 'off' | 'zero' | 'low' | 'ok';
 
-function statusOf(item: LimitStockItem): 'zero' | 'low' | 'ok' {
+const ALL_CATEGORIES = '__all__';
+
+function statusOf(item: LimitStockItem): StockStatus {
+  // เกณฑ์ = 0 → ปิดแจ้งเตือนสำหรับสินค้านี้ ไม่ว่าสต็อกจะเหลือเท่าไร
+  if (item.threshold <= 0) return 'off';
   if (item.stock <= 0) return 'zero';
   if (item.stock <= item.threshold) return 'low';
   return 'ok';
@@ -30,20 +35,33 @@ export default function LimitStockPage() {
   const [drafts, setDrafts] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [saving, setSaving] = useState(false);
+  const [notifying, setNotifying] = useState(false);
 
   const items = data?.items ?? [];
   const defaultThreshold = data?.defaultThreshold ?? 500;
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) {
+      const c = (it.category || '').trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+  }, [items]);
+
   const stats = useMemo(() => {
     let zero = 0;
     let low = 0;
+    let off = 0;
     for (const it of items) {
       const s = statusOf(it);
       if (s === 'zero') zero += 1;
       else if (s === 'low') low += 1;
+      else if (s === 'off') off += 1;
     }
-    return { total: items.length, zero, low };
+    return { total: items.length, zero, low, off };
   }, [items]);
 
   const dirtyCodes = useMemo(() => {
@@ -59,16 +77,20 @@ export default function LimitStockPage() {
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((it) => {
+      if (category !== ALL_CATEGORIES && (it.category || '').trim() !== category) {
+        return false;
+      }
       if (q) {
         const haystack = `${it.code} ${it.name} ${it.category}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
-      if (filter === 'below') return statusOf(it) !== 'ok';
-      if (filter === 'zero') return statusOf(it) === 'zero';
+      const s = statusOf(it);
+      if (filter === 'below') return s === 'zero' || s === 'low';
+      if (filter === 'zero') return s === 'zero';
       if (filter === 'custom') return it.custom;
       return true;
     });
-  }, [items, search, filter]);
+  }, [items, search, filter, category]);
 
   const apiStatus = (error as ApiError | undefined)?.status;
   const isUnauthorized = isAuthStatus(apiStatus);
@@ -127,6 +149,28 @@ export default function LimitStockPage() {
     }
   };
 
+  const handleNotifyNow = async () => {
+    if (notifying) return;
+    setNotifying(true);
+    try {
+      const res = await fetch('/api/limit-stock/notify', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (isAuthStatus(res.status)) broadcastAuthChanged('denied');
+        addToast(body.detail || body.error || 'ส่งแจ้งเตือนไม่สำเร็จ', 'error');
+        return;
+      }
+      addToast(
+        `✅ ${body.message || 'ตรวจสอบและส่งการแจ้งเตือนเรียบร้อยแล้ว'}`,
+        'success',
+      );
+    } catch {
+      addToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+    } finally {
+      setNotifying(false);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <ToastContainer toasts={toasts} remove={removeToast} />
@@ -138,8 +182,23 @@ export default function LimitStockPage() {
         <p>
           ตั้งเกณฑ์แจ้งเตือนสต็อกต่ำสำหรับฝ่ายจัดซื้อ — ค่าเริ่มต้น{' '}
           <strong>{defaultThreshold}</strong> ชิ้น ระบบจะส่ง LINE ทุกวัน{' '}
-          <strong>09:00 น.</strong> และยิงด่วนเมื่อยอดเหลือเป็น 0
+          <strong>09:00 น.</strong> และยิงด่วนเมื่อยอดเหลือเป็น 0 —{' '}
+          ตั้งเกณฑ์เป็น <strong>0</strong> เพื่อปิดแจ้งเตือนสินค้าชิ้นนั้น
         </p>
+        <div className={styles.notifyRow}>
+          <button
+            type="button"
+            className={styles.notifyBtn}
+            onClick={handleNotifyNow}
+            disabled={notifying}
+          >
+            {notifying ? '⏳ กำลังตรวจสอบและส่ง...' : '📢 ตรวจสอบและแจ้งเตือนทันที'}
+          </button>
+          <span className={styles.notifyHint}>
+            สแกนสต็อกปัจจุบันเทียบกับเกณฑ์ แล้วยิง LINE หาฝ่ายจัดซื้อทันที
+            โดยไม่ต้องรอรอบ 09:00 น.
+          </span>
+        </div>
       </header>
 
       {isUnauthorized && (
@@ -174,6 +233,19 @@ export default function LimitStockPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select
+          className={styles.categorySelect}
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          title="กรองตามหมวดหมู่สินค้า"
+        >
+          <option value={ALL_CATEGORIES}>📂 ทุกหมวดหมู่ ({categories.length})</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           className={`${styles.filterButton}${filter === 'all' ? ' ' + styles.filterButtonActive : ''}`}
@@ -278,6 +350,8 @@ export default function LimitStockPage() {
                     ? styles.rowZero
                     : status === 'low'
                     ? styles.rowLow
+                    : status === 'off'
+                    ? styles.rowOff
                     : '';
                 return (
                   <tr key={it.code} className={rowClass}>
@@ -317,6 +391,8 @@ export default function LimitStockPage() {
                             ? styles.zero
                             : status === 'low'
                             ? styles.low
+                            : status === 'off'
+                            ? styles.off
                             : styles.ok
                         }`}
                       >
@@ -324,6 +400,8 @@ export default function LimitStockPage() {
                           ? 'หมดคลัง'
                           : status === 'low'
                           ? 'ต่ำกว่าเกณฑ์'
+                          : status === 'off'
+                          ? 'ปิดแจ้งเตือน'
                           : 'ปกติ'}
                       </span>
                     </td>
@@ -366,6 +444,13 @@ export default function LimitStockPage() {
             style={{ background: 'rgba(245, 158, 11, 0.55)' }}
           />
           สีเหลือง = ต่ำกว่าเกณฑ์ — รวมในรายงาน 09:00 น.
+        </span>
+        <span>
+          <span
+            className={styles.legendDot}
+            style={{ background: 'rgba(100, 116, 139, 0.45)' }}
+          />
+          เกณฑ์ = 0 = ปิดแจ้งเตือนสินค้าชิ้นนั้น (ไม่ยิง LINE แม้สต็อกเหลือ 0)
         </span>
         <span>* การแก้ไขเกณฑ์จะถูกบันทึกในตารางคอนฟิกแยก ไม่กระทบ Sheet 1</span>
       </div>

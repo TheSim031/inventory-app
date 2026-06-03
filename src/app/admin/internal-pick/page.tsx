@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { ToastContainer, useToast } from '@/components/Toast';
 import { fetchJson } from '@/lib/authClient';
+import { bangkokTodayISO } from '@/lib/dateTime';
 import styles from './internal-pick.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,7 @@ type Slip = {
   uid: string;
   requester: string;
   purpose: string;
+  requestedDate: string; // YYYY-MM-DD (Bangkok); default today, editable
   items: SlipItem[];
 };
 
@@ -44,6 +46,7 @@ const newSlip = (): Slip => ({
   uid: `slip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
   requester: '',
   purpose: '',
+  requestedDate: bangkokTodayISO(),
   items: [newSlipItem()],
 });
 
@@ -141,6 +144,7 @@ export default function InternalPickPage() {
         (s) =>
           s.requester.trim() &&
           s.purpose.trim() &&
+          s.requestedDate &&
           s.items.length > 0 &&
           s.items.every(
             (it) =>
@@ -160,6 +164,7 @@ export default function InternalPickPage() {
         slips: slips.map((s) => ({
           requester: s.requester.trim(),
           purpose: s.purpose.trim(),
+          requestedDate: s.requestedDate,
           items: s.items.map((it) => ({
             code: it.selected!.code,
             name: it.selected!.name,
@@ -196,6 +201,55 @@ export default function InternalPickPage() {
     }, 50);
   };
 
+  type PrintCell =
+    | { type: 'blank'; key: string }
+    | {
+        type: 'header';
+        key: string;
+        slipIdx: number;
+        requester: string;
+        purpose: string;
+      }
+    | {
+        type: 'item';
+        key: string;
+        slipIdx: number;
+        idx: number;
+        total: number;
+        requester: string;
+        purpose: string;
+        item: SlipItem;
+      };
+
+  const printCells = useMemo<PrintCell[]>(() => {
+    const cells: PrintCell[] = [];
+    slips.forEach((slip, slipIdx) => {
+      if (slipIdx > 0) {
+        cells.push({ type: 'blank', key: `blank-${slip.uid}` });
+      }
+      cells.push({
+        type: 'header',
+        key: `header-${slip.uid}`,
+        slipIdx,
+        requester: slip.requester,
+        purpose: slip.purpose,
+      });
+      slip.items.forEach((it, idx) => {
+        cells.push({
+          type: 'item',
+          key: `item-${it.uid}`,
+          slipIdx,
+          idx,
+          total: slip.items.length,
+          requester: slip.requester,
+          purpose: slip.purpose,
+          item: it,
+        });
+      });
+    });
+    return cells;
+  }, [slips]);
+
   return (
     <div className={styles.container}>
       <ToastContainer toasts={toasts} remove={removeToast} />
@@ -212,7 +266,7 @@ export default function InternalPickPage() {
 
       <div ref={slipsRef} className={styles.slips}>
         {slips.map((slip, slipIdx) => (
-          <section key={slip.uid} className={`${styles.slipCard} internal-slip-print`}>
+          <section key={slip.uid} className={styles.slipCard}>
             <div className={`${styles.slipHead} no-print`}>
               <h2>
                 ใบเบิกที่ {slipIdx + 1}{' '}
@@ -231,13 +285,7 @@ export default function InternalPickPage() {
               )}
             </div>
 
-            {/* Print-only header */}
-            <div className={styles.printSlipHead}>
-              <h2>ใบเบิกสินค้าภายใน #{slipIdx + 1}</h2>
-              <div>บริษัท ไพโอเนียร์ เอ็นจิเนียริ่ง อินเตอร์เนชั่นแนล จำกัด</div>
-            </div>
-
-            <div className={styles.fieldRow}>
+            <div className={`${styles.fieldRow} no-print`}>
               <div className={styles.field}>
                 <label>ชื่อผู้เบิก *</label>
                 <input
@@ -249,9 +297,6 @@ export default function InternalPickPage() {
                   placeholder="เช่น คุณสมชาย"
                   className={styles.input}
                 />
-                <div className={styles.printField}>
-                  <strong>ผู้เบิก:</strong> {slip.requester || '-'}
-                </div>
               </div>
 
               <div className={styles.field}>
@@ -265,9 +310,20 @@ export default function InternalPickPage() {
                   placeholder="เช่น ทดสอบประกอบ / งานซ่อม"
                   className={styles.input}
                 />
-                <div className={styles.printField}>
-                  <strong>วัตถุประสงค์:</strong> {slip.purpose || '-'}
-                </div>
+              </div>
+            </div>
+
+            <div className={`${styles.fieldRow} no-print`}>
+              <div className={styles.field}>
+                <label>วันที่เบิก *</label>
+                <input
+                  type="date"
+                  value={slip.requestedDate}
+                  onChange={(e) =>
+                    updateSlip(slip.uid, { requestedDate: e.target.value })
+                  }
+                  className={styles.input}
+                />
               </div>
             </div>
 
@@ -373,40 +429,98 @@ export default function InternalPickPage() {
               })}
             </div>
 
-            {/* Print-only items table */}
-            <table className={styles.printItemsTable}>
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}>#</th>
-                  <th>รหัส</th>
-                  <th>ชื่อรายการ</th>
-                  <th style={{ width: '80px', textAlign: 'right' }}>จำนวน</th>
-                </tr>
-              </thead>
-              <tbody>
-                {slip.items.map((it, i) => (
-                  <tr key={it.uid}>
-                    <td>{i + 1}</td>
-                    <td>{it.selected?.code || '-'}</td>
-                    <td>{it.selected?.name || '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>
-                      {it.quantity || 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className={styles.printSignBlock}>
-              <div>
-                <div className={styles.printSignLine}>ลายเซ็นผู้เบิก / วันที่</div>
-              </div>
-              <div>
-                <div className={styles.printSignLine}>ลายเซ็นผู้จ่าย / วันที่</div>
-              </div>
-            </div>
           </section>
         ))}
+      </div>
+
+      {/* Print-only sheet — flattens every slip into a single 2×4 grid (8 cells
+          per A4). Cell 1 of a slip shows ผู้เบิก/วัตถุประสงค์ for the box label;
+          remaining cells show รหัส/ชื่อ/หมวดหมู่/จำนวน per item. A blank cell is
+          inserted between slips so the cut boundary is unambiguous. */}
+      <div className={styles.printSheet} aria-hidden>
+        <div className={styles.printGrid}>
+          {printCells.map((cell) => {
+            if (cell.type === 'blank') {
+              return (
+                <div
+                  key={cell.key}
+                  className={`${styles.printCell} ${styles.printCellBlank}`}
+                />
+              );
+            }
+            if (cell.type === 'header') {
+              return (
+                <div
+                  key={cell.key}
+                  className={`${styles.printCell} ${styles.printCellHeader}`}
+                >
+                  <div className={styles.printCellHeaderTag}>
+                    ใบปะหน้า #{cell.slipIdx + 1}
+                  </div>
+                  <div className={styles.printCellHeaderLabel}>ผู้เบิก</div>
+                  <div className={styles.printCellHeaderName}>
+                    {cell.requester || '-'}
+                  </div>
+                  <div className={styles.printCellHeaderLabel}>
+                    วัตถุประสงค์
+                  </div>
+                  <div className={styles.printCellHeaderPurpose}>
+                    {cell.purpose || '-'}
+                  </div>
+                </div>
+              );
+            }
+            const it = cell.item;
+            return (
+              <div key={cell.key} className={styles.printCell}>
+                <div className={styles.printCellTopRow}>
+                  <span className={styles.printCellSlipBadge}>
+                    ชุดที่ {cell.slipIdx + 1}
+                  </span>
+                  <span className={styles.printCellIdx}>
+                    #{cell.idx + 1}/{cell.total}
+                  </span>
+                </div>
+                <div className={styles.printCellSlipInfo}>
+                  <div className={styles.printCellSlipInfoRow}>
+                    <span className={styles.printCellSlipInfoLabel}>ผู้เบิก</span>
+                    <span className={styles.printCellSlipInfoValue}>
+                      {cell.requester || '-'}
+                    </span>
+                  </div>
+                  <div className={styles.printCellSlipInfoRow}>
+                    <span className={styles.printCellSlipInfoLabel}>
+                      วัตถุประสงค์
+                    </span>
+                    <span className={styles.printCellSlipInfoValue}>
+                      {cell.purpose || '-'}
+                    </span>
+                  </div>
+                </div>
+                <div className={styles.printCellBody}>
+                  {it.selected?.category && (
+                    <div className={styles.printCellCategory}>
+                      {it.selected.category}
+                    </div>
+                  )}
+                  <div
+                    className={styles.printCellItemName}
+                    style={{
+                      fontSize: coverItemNameFontSize(
+                        it.selected?.name || '',
+                      ),
+                    }}
+                  >
+                    {it.selected?.name || '-'}
+                  </div>
+                </div>
+                <div className={styles.printCellQty}>
+                  × {it.quantity || 0}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className={`${styles.actions} no-print`}>
@@ -436,4 +550,12 @@ export default function InternalPickPage() {
       </div>
     </div>
   );
+}
+
+function coverItemNameFontSize(name: string): string {
+  const len = Array.from(name.trim()).length;
+  if (len > 54) return '0.72rem';
+  if (len > 42) return '0.82rem';
+  if (len > 30) return '0.92rem';
+  return '1.05rem';
 }

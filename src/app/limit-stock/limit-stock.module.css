@@ -24,6 +24,51 @@
   margin-bottom: 1.5rem;
 }
 
+.notifyRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.notifyBtn {
+  padding: 0.8rem 1.6rem;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: var(--shadow-red);
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+.notifyBtn:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.notifyBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.notifyBtn:disabled {
+  background: var(--border-color);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.notifyHint {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex: 1 1 240px;
+}
+
 .statsRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -107,6 +152,25 @@
 }
 
 .searchInput:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.categorySelect {
+  flex: 0 1 220px;
+  padding: 0.7rem 0.9rem;
+  border: 2px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.categorySelect:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
@@ -249,6 +313,11 @@
   background: rgba(245, 158, 11, 0.10);
 }
 
+.rowOff {
+  background: rgba(100, 116, 139, 0.07);
+  opacity: 0.72;
+}
+
 .codeCell {
   font-family: 'Courier New', monospace;
   font-weight: 800;
@@ -345,6 +414,10 @@
   color: var(--success-color);
 }
 
+.statusBadge.off {
+  color: var(--text-muted);
+}
+
 .empty {
   padding: 3rem 1rem;
   text-align: center;
@@ -412,6 +485,23 @@
     flex: 1 1 100%;
     min-height: 48px;
     padding: 0.8rem 0.95rem;
+  }
+  .categorySelect {
+    flex: 1 1 100%;
+    min-height: 48px;
+  }
+  .notifyRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .notifyBtn {
+    width: 100%;
+    min-height: 52px;
+  }
+  .notifyHint {
+    flex: 1 1 100%;
+    text-align: center;
   }
   .filterButton {
     flex: 1 1 calc(50% - 0.3rem);

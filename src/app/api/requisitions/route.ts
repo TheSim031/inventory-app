@@ -6,6 +6,7 @@ import {
 } from '@/lib/googleSheets';
 import { sendLineNotification } from '@/lib/lineNotify';
 import { requireRoles } from '@/lib/auth';
+import { isoForPickedDate } from '@/lib/dateTime';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -15,6 +16,8 @@ type CreateBody = {
   department?: string;
   purpose?: string;
   items?: RequisitionItem[];
+  /** YYYY-MM-DD picked by the user on the request form. */
+  requestedDate?: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -96,9 +99,10 @@ export async function POST(request: NextRequest) {
   })();
 
   const id = `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const requestedAt = isoForPickedDate(body.requestedDate);
   const ok = await appendRequisitionRow({
     id,
-    requestedAt: new Date().toISOString(),
+    requestedAt,
     requester,
     department,
     purpose,

@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
     `👉 เข้าเมนู "ประวัติตรวจสอบ" เพื่อเลือกรายการที่จะลบ`;
 
   try {
-    const delivery = await sendLineToRoles(['WAREHOUSE'], text);
+    const delivery = await sendLineToRoles(['WAREHOUSE'], text, {
+      notificationType: 'MONTHLY_CLEANUP',
+    });
     if (!delivery.ok) {
       console.error('Cron LINE dispatch failed:', delivery);
       return NextResponse.json(

@@ -711,15 +711,31 @@ function findHeaderIndex(headers: string[], candidates: string[]): number {
  * Read the items sheet with header-aware column mapping.
  *
  * Sheet layout (PIONEER stock sheet):
- *   Row 1  — merged title cell ("PIONEER — ระบบจัดการสต็อกสินค้า"), skipped
- *   Row 2  — header row: รหัส | ชื่อรายการ | หมวดหมู่ | คงเหลือ | สถานะ
- *   Row 3+ — item data
+ *   Row 1  — merged title cell ("🏭 PIONEER — สต็อกสินค้า ..."), skipped
+ *   Row 2  — instruction/help row ("🔍 วิธีค้นหาตามหมวดหมู่ ..."), skipped
+ *   Row 3  — header row: รหัส | ชื่อรายการ | หมวดหมู่ | คงเหลือ | สถานะ | หน่วย
+ *   Row 4+ — item data, interleaved with "▶ <หมวด> (N รายการ)" group rows
  *
- * Header matching falls back to positional A:E if a header name can't be
- * located, so a future tweak to column names won't silently break reads.
+ * The header row is located dynamically (first row whose col A is a known
+ * code-header label) so an extra title/instruction row above it never
+ * shifts the parse off-by-one. Header matching then falls back to positional
+ * A:E if a header name can't be located.
  */
-const HEADER_ROW_INDEX = 1; // zero-based → sheet row 2
-const DATA_START_INDEX = 2; // zero-based → sheet row 3
+const CODE_HEADER_LABELS = ['รหัส', 'รหัสสินค้า', 'code', 'item code', 'sku', 'id'];
+
+// Marker glyphs that prefix non-item rows: category group headers ("▶ BUSH")
+// and legacy section separators ("▌ ...").
+const SEPARATOR_MARKERS = /^[▶▌►▷◀◁◆■●○•※]/;
+
+/** Locate the header row index (zero-based) by matching col A to a code label. */
+function findHeaderRowIndex(rawRows: unknown[][]): number {
+  const limit = Math.min(rawRows.length, 10);
+  for (let i = 0; i < limit; i++) {
+    const first = String((rawRows[i] || [])[0] ?? '').trim().toLowerCase();
+    if (CODE_HEADER_LABELS.some((c) => first === c.toLowerCase())) return i;
+  }
+  return 1; // fall back to legacy assumption (sheet row 2)
+}
 
 export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
@@ -742,11 +758,14 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
     return null;
   }
 
-  if (rawRows.length <= HEADER_ROW_INDEX) {
+  const headerRowIndex = findHeaderRowIndex(rawRows);
+  const dataStartIndex = headerRowIndex + 1;
+
+  if (rawRows.length <= headerRowIndex) {
     return { rows: [], stockColLetter: 'D' };
   }
 
-  const headers = (rawRows[HEADER_ROW_INDEX] || []).map((h) => String(h ?? ''));
+  const headers = (rawRows[headerRowIndex] || []).map((h) => String(h ?? ''));
 
   const codeIdx = findHeaderIndex(headers, ['รหัส', 'รหัสสินค้า', 'code', 'item code', 'sku', 'id']);
   const nameIdx = findHeaderIndex(headers, ['ชื่อรายการ', 'ชื่อสินค้า', 'ชื่อ', 'name', 'item name', 'description']);
@@ -771,19 +790,19 @@ export async function readItemsSheet(): Promise<ItemsSheetSchema | null> {
   const stIdx = statusIdx >= 0 ? statusIdx : 4;
 
 
-  // A row is a "category separator" (e.g. "▌ BUSH" in col A, other cells blank)
-  // when its display fields are empty or start with the ▌ marker. Skip those
-  // so they never appear as searchable items.
+  // A row is a "category separator" (e.g. "▶ BUSH (68 รายการ)") when col A or
+  // the name starts with a marker glyph, or it has no name/category at all.
+  // Skip those so group headers never appear as searchable/notifiable items.
   const isSeparatorRow = (code: string, name: string, category: string): boolean => {
-    if (code.startsWith('▌')) return true;
+    if (SEPARATOR_MARKERS.test(code)) return true;
+    if (SEPARATOR_MARKERS.test(name)) return true;
+    if (SEPARATOR_MARKERS.test(category)) return true;
     if (!name && !category) return true; // pure section header
-    if (name.startsWith('▌')) return true;
-    if (category.startsWith('▌')) return true;
     return false;
   };
 
   const items: SheetItemRow[] = [];
-  for (let i = DATA_START_INDEX; i < rawRows.length; i++) {
+  for (let i = dataStartIndex; i < rawRows.length; i++) {
     const row = rawRows[i] || [];
     const code = String(row[cIdx] ?? '').trim();
     const name = String(row[nIdx] ?? '').trim();
@@ -998,10 +1017,12 @@ export async function readLimitStockSheet(): Promise<LimitStockRow[] | null> {
     const code = String(row[0] ?? '').trim();
     if (!code) continue;
     const rawThreshold = String(row[1] ?? '').trim();
-    const threshold = Math.max(
-      0,
-      parseInt(rawThreshold.replace(/,/g, ''), 10) || LIMIT_STOCK_DEFAULT_THRESHOLD,
-    );
+    // An explicit "0" means "alerts disabled" and must survive the round-trip.
+    // Only blank / non-numeric cells fall back to the default threshold.
+    const parsedThreshold = parseInt(rawThreshold.replace(/,/g, ''), 10);
+    const threshold = Number.isFinite(parsedThreshold)
+      ? Math.max(0, parsedThreshold)
+      : LIMIT_STOCK_DEFAULT_THRESHOLD;
     result.push({
       sheetRow: i + 1,
       code,
@@ -1781,21 +1802,29 @@ export async function rejectRequisitionRow(args: {
   }
 }
 
-/** Append OUT rows to the history sheet (stock formula updates immediately). */
+/**
+ * Append OUT rows to the history sheet (stock formula updates immediately).
+ *
+ * `date` overrides column A "วันที่". When omitted, the current ISO timestamp
+ * is used (original behavior). Pass a stable ISO string when the row's
+ * effective date is user-chosen (e.g. /request, /admin/internal-pick) so the
+ * sheet's YEAR()/MONTH() formulas pick it up.
+ */
 export async function appendHistoryOutRows(args: {
   recorder: string;
   department: string;
   purpose: string;
   items: RequisitionItem[];
+  date?: string;
 }): Promise<{ ok: boolean; count: number }> {
   const { sheets, spreadsheetId } = getSheetsClient();
   if (!sheets || !spreadsheetId) return { ok: false, count: 0 };
   const SHEET_HISTORY = await resolveHistorySheetName();
   if (!SHEET_HISTORY) return { ok: false, count: 0 };
 
-  const now = new Date().toISOString();
+  const stamp = (args.date && args.date.trim()) || new Date().toISOString();
   const historyValues = args.items.map((it) => [
-    now,
+    stamp,
     'OUT',
     String(it.code).trim(),
     String(it.name).trim(),
@@ -1818,5 +1847,242 @@ export async function appendHistoryOutRows(args: {
   } catch (error) {
     console.error('Google Sheets Error (appendHistoryOutRows):', error);
     return { ok: false, count: 0 };
+  }
+}
+
+/* ─── Notification settings sheets ─── */
+/**
+ * Two system tabs back the "การแก้ไขการแจ้งเตือน" admin screen. They store
+ * ONLY values that deviate from the code defaults (catalog in
+ * notificationConfig.ts), exactly like the limit-stock threshold tab — so a
+ * freshly-created spreadsheet reproduces the legacy routing with zero setup.
+ *
+ *   "ตั้งค่าแจ้งเตือน-กลุ่ม"      — per (notification type × role) on/off
+ *   "ตั้งค่าแจ้งเตือน-รายบุคคล"  — per (LINE user × notification type) override
+ *
+ * Neither tab touches the main stock sheet.
+ */
+const NOTIF_GROUP_SHEET_NAME = 'ตั้งค่าแจ้งเตือน-กลุ่ม';
+const FALLBACK_NOTIF_GROUP_TABS = ['ตั้งค่าแจ้งเตือน-กลุ่ม', 'NotificationGroups'];
+const NOTIF_USER_SHEET_NAME = 'ตั้งค่าแจ้งเตือน-รายบุคคล';
+const FALLBACK_NOTIF_USER_TABS = ['ตั้งค่าแจ้งเตือน-รายบุคคล', 'NotificationUsers'];
+
+export type NotifGroupConfigRow = { key: string; role: string; enabled: boolean };
+export type NotifUserOverrideRow = {
+  lineUserId: string;
+  displayName: string;
+  key: string;
+  enabled: boolean;
+};
+
+function parseNotifBool(v: unknown): boolean {
+  const s = String(v ?? '').trim().toUpperCase();
+  return s === 'TRUE' || s === '1' || s === 'YES' || s === 'Y' || s === '✓' || s === 'ON';
+}
+
+async function ensureNotifGroupSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_NOTIF_GROUP_TABS) if (tabs.includes(f)) return f;
+  }
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: NOTIF_GROUP_SHEET_NAME } } }],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${NOTIF_GROUP_SHEET_NAME}!A1:E2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — สิทธิ์รับแจ้งเตือนระดับกลุ่ม (เก็บเฉพาะค่าที่ต่างจากค่าเริ่มต้น)'],
+          ['ประเภทการแจ้งเตือน', 'กลุ่ม (Role)', 'รับแจ้งเตือน', 'แก้ไขล่าสุด', 'ผู้แก้ไข'],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return NOTIF_GROUP_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureNotifGroupSheet):', error);
+    return null;
+  }
+}
+
+export async function readNotifGroupConfig(): Promise<NotifGroupConfigRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureNotifGroupSheet();
+  if (!tab) return null;
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:E`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readNotifGroupConfig):', error);
+    return null;
+  }
+  if (rawRows.length <= 1) return [];
+  const result: NotifGroupConfigRow[] = [];
+  for (let i = 2; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const key = String(row[0] ?? '').trim();
+    const role = String(row[1] ?? '').trim();
+    if (!key || !role) continue;
+    result.push({ key, role, enabled: parseNotifBool(row[2]) });
+  }
+  return result;
+}
+
+/** Replace the entire group-config data region with the given deviations. */
+export async function replaceNotifGroupConfig(args: {
+  rows: NotifGroupConfigRow[];
+  updatedBy: string;
+}): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureNotifGroupSheet();
+  if (!tab) return false;
+  const now = new Date().toISOString();
+  const author = (args.updatedBy || '').trim();
+  try {
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${tab}!A3:E` });
+    if (args.rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tab}!A3`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: args.rows.map((r) => [
+            r.key,
+            r.role,
+            r.enabled ? 'TRUE' : 'FALSE',
+            now,
+            author,
+          ]),
+        },
+      });
+    }
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (replaceNotifGroupConfig):', error);
+    return false;
+  }
+}
+
+async function ensureNotifUserSheet(): Promise<string | null> {
+  const tabs = await getActualSheetTabs();
+  if (tabs) {
+    for (const f of FALLBACK_NOTIF_USER_TABS) if (tabs.includes(f)) return f;
+  }
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: NOTIF_USER_SHEET_NAME } } }],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${NOTIF_USER_SHEET_NAME}!A1:F2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['PIONEER — สิทธิ์รับแจ้งเตือนรายบุคคล (override เฉพาะตัว)'],
+          [
+            'LINE User ID',
+            'ชื่อแสดงผล',
+            'ประเภทการแจ้งเตือน',
+            'รับแจ้งเตือน',
+            'แก้ไขล่าสุด',
+            'ผู้แก้ไข',
+          ],
+        ],
+      },
+    });
+    actualTabsCache = null;
+    return NOTIF_USER_SHEET_NAME;
+  } catch (error) {
+    console.error('Google Sheets Error (ensureNotifUserSheet):', error);
+    return null;
+  }
+}
+
+export async function readNotifUserOverrides(): Promise<NotifUserOverrideRow[] | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return null;
+  const tab = await ensureNotifUserSheet();
+  if (!tab) return null;
+  let rawRows: unknown[][] = [];
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:F`,
+    });
+    rawRows = (response.data.values as unknown[][]) || [];
+  } catch (error) {
+    console.error('Google Sheets Error (readNotifUserOverrides):', error);
+    return null;
+  }
+  if (rawRows.length <= 1) return [];
+  const result: NotifUserOverrideRow[] = [];
+  for (let i = 2; i < rawRows.length; i++) {
+    const row = rawRows[i] || [];
+    const lineUserId = String(row[0] ?? '').trim();
+    const key = String(row[2] ?? '').trim();
+    if (!lineUserId || !key) continue;
+    result.push({
+      lineUserId,
+      displayName: String(row[1] ?? '').trim(),
+      key,
+      enabled: parseNotifBool(row[3]),
+    });
+  }
+  return result;
+}
+
+/** Replace the entire user-override data region. */
+export async function replaceNotifUserOverrides(args: {
+  rows: NotifUserOverrideRow[];
+  updatedBy: string;
+}): Promise<boolean> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  if (!sheets || !spreadsheetId) return false;
+  const tab = await ensureNotifUserSheet();
+  if (!tab) return false;
+  const now = new Date().toISOString();
+  const author = (args.updatedBy || '').trim();
+  try {
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${tab}!A3:F` });
+    if (args.rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tab}!A3`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: args.rows.map((r) => [
+            r.lineUserId,
+            r.displayName,
+            r.key,
+            r.enabled ? 'TRUE' : 'FALSE',
+            now,
+            author,
+          ]),
+        },
+      });
+    }
+    return true;
+  } catch (error) {
+    console.error('Google Sheets Error (replaceNotifUserOverrides):', error);
+    return false;
   }
 }

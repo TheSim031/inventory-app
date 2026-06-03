@@ -67,6 +67,13 @@ export const MENU_ITEMS: MenuItem[] = [
         icon: '🤫',
         creatorOnly: true,
       },
+      {
+        id: 'admin-notifications',
+        label: 'การแก้ไขการแจ้งเตือน',
+        href: '/admin/notifications',
+        icon: '🔔',
+        creatorOnly: true,
+      },
     ],
   },
 ];

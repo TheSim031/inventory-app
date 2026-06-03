@@ -11,6 +11,11 @@
  */
 import { readUsersSheet } from './googleSheets';
 import { isUserRole, type UserRole } from './userRole';
+import {
+  isUserAllowed,
+  resolveNotificationRecipients,
+  type NotificationKey,
+} from './notificationConfig';
 
 const LINE_CHANNEL_ACCESS_TOKEN =
   process.env.LINE_CHANNEL_ACCESS_TOKEN ||
@@ -285,7 +290,44 @@ export type RoleNotifyOptions = {
    * the full set of attachments (e.g. all warehouse photos at receiving).
    */
   maxImages?: number;
+  /**
+   * Notification type key (notificationConfig.ts). When provided the recipient
+   * set is driven by the admin "การแก้ไขการแจ้งเตือน" config instead of the
+   * raw `roles` argument, so group/per-user opt-outs are always honored.
+   */
+  notificationType?: NotificationKey;
 };
+
+type RoleAudience = { ids: string[]; skipped: number; errors: string[] };
+
+/**
+ * Resolve which LINE userIds should receive a role-targeted notification,
+ * honoring the admin notification config when a type is given. Centralizes the
+ * "missing lineUserId" / "no recipients" bookkeeping so the single-text and
+ * multi-text senders below stay in sync.
+ */
+async function resolveRoleAudience(
+  roles: UserRole[],
+  notificationType?: NotificationKey,
+): Promise<RoleAudience> {
+  const recipients = notificationType
+    ? await resolveNotificationRecipients(notificationType)
+    : await resolveRoleRecipients(roles);
+  if (recipients.missingLineUserId > 0) {
+    console.warn(
+      `[LINE] ${recipients.missingLineUserId} ${roles.join('/')} user(s) have no lineUserId; cannot notify them`,
+    );
+  }
+  if (recipients.ids.length === 0) {
+    const reason = notificationType
+      ? `notification "${notificationType}" has no permitted recipients`
+      : `no recipients found for roles ${roles.join(', ')}`;
+    const message = `[LINE] ${reason} — message dropped`;
+    console.warn(message);
+    return { ids: [], skipped: recipients.missingLineUserId, errors: [message] };
+  }
+  return { ids: recipients.ids, skipped: recipients.missingLineUserId, errors: [] };
+}
 
 /**
  * Send a notification to every user with one of the given roles. If LINE is
@@ -297,21 +339,16 @@ export async function sendLineToRoles(
   text: string,
   options: RoleNotifyOptions = {},
 ): Promise<LineDeliveryResult> {
-  const recipients = await resolveRoleRecipients(roles);
-  const result = emptyDeliveryResult();
-  result.skipped += recipients.missingLineUserId;
-  if (recipients.missingLineUserId > 0) {
-    console.warn(
-      `[LINE] ${recipients.missingLineUserId} ${roles.join('/')} user(s) have no lineUserId; cannot notify them`,
-    );
-  }
-  if (recipients.ids.length === 0) {
-    const message =
-      `[LINE] no recipients found for roles ${roles.join(', ')} — message dropped`;
-    console.warn(message);
-    result.ok = false;
-    result.errors.push(message);
-    return result;
+  const audience = await resolveRoleAudience(roles, options.notificationType);
+  if (audience.ids.length === 0) {
+    return {
+      ok: false,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skipped: audience.skipped,
+      errors: audience.errors,
+    };
   }
   const messages: LineMessage[] = [{ type: 'text', text }];
   if (!options.textOnly && options.images && options.images.length > 0) {
@@ -326,11 +363,49 @@ export async function sendLineToRoles(
       });
     }
   }
-  const delivery = await multicast(recipients.ids, messages);
+  const delivery = await multicast(audience.ids, messages);
   return {
     ...delivery,
-    skipped: delivery.skipped + result.skipped,
-    errors: [...result.errors, ...delivery.errors],
+    skipped: delivery.skipped + audience.skipped,
+    errors: [...audience.errors, ...delivery.errors],
+  };
+}
+
+/**
+ * Send several pre-composed text messages to every user with one of the given
+ * roles, resolving the audience only once. Used by the low-stock summary to
+ * split a long item list across multiple LINE messages (chunking) without
+ * re-reading the Users sheet per chunk. `multicast` already batches into
+ * LINE's 5-messages-per-call limit.
+ */
+export async function sendLineTextsToRoles(
+  roles: UserRole[],
+  texts: string[],
+  options: { notificationType?: NotificationKey } = {},
+): Promise<LineDeliveryResult> {
+  const messages: LineMessage[] = texts
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+    .map((text) => ({ type: 'text', text }));
+  if (messages.length === 0) {
+    return { ok: false, attempted: 0, sent: 0, failed: 0, skipped: 0, errors: ['no message content'] };
+  }
+  const audience = await resolveRoleAudience(roles, options.notificationType);
+  if (audience.ids.length === 0) {
+    return {
+      ok: false,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skipped: audience.skipped,
+      errors: audience.errors,
+    };
+  }
+  const delivery = await multicast(audience.ids, messages);
+  return {
+    ...delivery,
+    skipped: delivery.skipped + audience.skipped,
+    errors: [...audience.errors, ...delivery.errors],
   };
 }
 
@@ -349,6 +424,13 @@ export async function sendLineToUser(
       skipped: 1,
       errors: ['missing LINE userId'],
     };
+  }
+  if (
+    options.notificationType &&
+    !(await isUserAllowed(options.notificationType, userId))
+  ) {
+    // Recipient opted out (group default or per-user override). Not a failure.
+    return { ok: true, attempted: 0, sent: 0, failed: 0, skipped: 1, errors: [] };
   }
   const messages: LineMessage[] = [{ type: 'text', text }];
   if (!options.textOnly && options.images && options.images.length > 0) {
@@ -386,7 +468,7 @@ export async function sendLineNotification<T extends NotificationType>(
     case 'REQ_SUBMITTED': {
       const d = data as Extract<NotificationPayload, { type: 'REQ_SUBMITTED' }>['data'];
       const text = `📋 ใบเบิกใหม่รอจัดของ\nรหัส: ${d.id}\nผู้ขอ: ${d.requester}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการ:\n${formatItemList(d.items)}\n\n👉 เข้าเมนู "จัดของ" (/out) เพื่อยืนยัน`;
-      return sendLineToRoles(['WAREHOUSE'], text);
+      return sendLineToRoles(['WAREHOUSE'], text, { notificationType: 'REQ_SUBMITTED' });
     }
     case 'PICK_COMPLETE': {
       const d = data as Extract<NotificationPayload, { type: 'PICK_COMPLETE' }>['data'];
@@ -402,7 +484,7 @@ export async function sendLineNotification<T extends NotificationType>(
           ? `รายการที่จัดให้:\n${formatItemList(d.items)}`
           : 'ไม่มีรายการที่ตัดสต็อก (ทุกรายการพัสดุหมด)';
       const text = `✅ จัดของเสร็จแล้ว\nรหัส: ${d.id}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\n\n${pickedBlock}${outBlock}`;
-      return sendLineToUser(d.recipientLineUserId, text);
+      return sendLineToUser(d.recipientLineUserId, text, { notificationType: 'PICK_COMPLETE' });
     }
     case 'REQ_REJECTED': {
       const d = data as Extract<NotificationPayload, { type: 'REQ_REJECTED' }>['data'];
@@ -411,22 +493,28 @@ export async function sendLineNotification<T extends NotificationType>(
       }
       const reasonBlock = d.reason ? `\nเหตุผล: ${d.reason}` : '';
       const text = `❌ ใบเบิกถูกปฏิเสธ\nรหัส: ${d.id}\nแผนก: ${d.department}${reasonBlock}\n\nกรุณาติดต่อคลังสินค้าหากมีข้อสงสัย`;
-      return sendLineToUser(d.recipientLineUserId, text);
+      return sendLineToUser(d.recipientLineUserId, text, { notificationType: 'REQ_REJECTED' });
     }
     case 'OUT_RECORDED': {
       const d = data as Extract<NotificationPayload, { type: 'OUT_RECORDED' }>['data'];
       const text = `📤 บันทึกการเบิกออก\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\nวัตถุประสงค์: ${d.purpose}\nจำนวนรายการ: ${d.itemsCount}\n\nรายการที่เบิก:\n${formatItemList(d.items)}`;
-      const results: LineDeliveryResult[] = [await sendLineToRoles(['WAREHOUSE'], text)];
+      const results: LineDeliveryResult[] = [
+        await sendLineToRoles(['WAREHOUSE'], text, { notificationType: 'OUT_RECORDED' }),
+      ];
       if (d.recipientLineUserId) {
         const personal = `📝 ยืนยันคำขอเบิกของคุณ\nผู้เบิก: ${d.recorder}\nแผนก: ${d.department}\n\nรายการที่ขอเบิก:\n${formatItemList(d.items)}`;
-        results.push(await sendLineToUser(d.recipientLineUserId, personal));
+        results.push(
+          await sendLineToUser(d.recipientLineUserId, personal, {
+            notificationType: 'OUT_CONFIRM',
+          }),
+        );
       }
       return combineDeliveryResults(results);
     }
     case 'IN_RECORDED': {
       const d = data as Extract<NotificationPayload, { type: 'IN_RECORDED' }>['data'];
       const text = `📥 บันทึกการรับเข้า\nผู้รับ: ${d.recorder}\nPO/PX: ${d.poRef}\nจำนวนรายการ: ${d.itemsCount}`;
-      return sendLineToRoles(['WAREHOUSE'], text);
+      return sendLineToRoles(['WAREHOUSE'], text, { notificationType: 'IN_RECORDED' });
     }
   }
 }

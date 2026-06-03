@@ -9,6 +9,7 @@ import {
   readErrorMessage,
   type ApiError,
 } from '@/lib/authClient';
+import { bangkokTodayISO } from '@/lib/dateTime';
 import styles from './request.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,7 @@ type RequestForm = {
   customDepartment: string;
   requester_name: string;
   purpose: string;
+  requestedDate: string; // YYYY-MM-DD (Bangkok); defaults to today
 };
 
 const emptyForm: RequestForm = {
@@ -62,6 +64,7 @@ const emptyForm: RequestForm = {
   customDepartment: '',
   requester_name: '',
   purpose: '',
+  requestedDate: '',
 };
 
 function readRequestDraft(): { cart: Record<string, CartEntry>; form: RequestForm } {
@@ -86,7 +89,12 @@ function readRequestDraft(): { cart: Record<string, CartEntry>; form: RequestFor
 export default function RequestPage() {
   const draft = useMemo(() => readRequestDraft(), []);
   const [cart, setCart] = useState<Record<string, CartEntry>>(() => draft.cart);
-  const [form, setForm] = useState<RequestForm>(() => draft.form);
+  const [form, setForm] = useState<RequestForm>(() => ({
+    ...draft.form,
+    // Default the date picker to today's Bangkok date when the user opens the
+    // form. Drafts saved before this field existed have it blank.
+    requestedDate: draft.form.requestedDate || bangkokTodayISO(),
+  }));
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -244,7 +252,8 @@ export default function RequestPage() {
     !submitting &&
     !!form.requester_name.trim() &&
     !!form.purpose.trim() &&
-    !!resolvedDepartment;
+    !!resolvedDepartment &&
+    !!form.requestedDate;
 
   const openConfirm = (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,6 +281,7 @@ export default function RequestPage() {
           department: resolvedDepartment,
           purpose: form.purpose.trim(),
           items: cartItems,
+          requestedDate: form.requestedDate,
         }),
       });
       if (res.ok) {
@@ -282,6 +292,7 @@ export default function RequestPage() {
           customDepartment: '',
           requester_name: meData?.user?.displayName || '',
           purpose: '',
+          requestedDate: bangkokTodayISO(),
         });
         if (typeof window !== 'undefined') window.localStorage.removeItem(DRAFT_KEY);
       } else {
@@ -429,6 +440,15 @@ export default function RequestPage() {
       <form onSubmit={openConfirm} className={styles.formSection}>
         <div className={styles.card}>
           <h3>ข้อมูลผู้เบิก</h3>
+          <div className={styles.inputGroup}>
+            <label>วันที่เบิก</label>
+            <input
+              required
+              type="date"
+              value={form.requestedDate}
+              onChange={(e) => setForm({ ...form, requestedDate: e.target.value })}
+            />
+          </div>
           <div className={styles.inputGroup}>
             <label>ชื่อผู้เบิก</label>
             <input

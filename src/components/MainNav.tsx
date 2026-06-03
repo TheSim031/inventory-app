@@ -43,6 +43,16 @@ export function MainNav() {
   const [loggingOut, setLoggingOut] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
 
+  // Auto-close the mobile drawer / dropdown on route change. Adjusting state
+  // during render (guarded by a previous-pathname compare) is React's
+  // recommended pattern over a setState-in-effect, which Next 16's lint flags.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    setMobileOpen(false);
+    setOpenDropdown(null);
+  }
+
   useEffect(() => {
     const close = (e: MouseEvent) => {
       if (navRef.current && !navRef.current.contains(e.target as Node)) {
@@ -63,12 +73,6 @@ export function MainNav() {
     window.addEventListener('storage', onAuthEvent);
     return () => window.removeEventListener('storage', onAuthEvent);
   }, [mutate, router]);
-
-  // Auto-close mobile drawer on route change so users don't have to tap close.
-  useEffect(() => {
-    setMobileOpen(false);
-    setOpenDropdown(null);
-  }, [pathname]);
 
   // Lock page scroll while drawer is open.
   useEffect(() => {

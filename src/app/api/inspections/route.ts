@@ -153,12 +153,14 @@ export async function POST(request: NextRequest) {
       const warehouseDelivery = await sendLineToRoles(['WAREHOUSE'], `${whText}\n\n🗂 รูปแนบจากคลัง: ${allWhImages.length} รูป (ส่ง preview สูงสุด 4 รูป)`, {
         images: allWhImages,
         maxImages: 4,
+        notificationType: 'INSPECT_NEW_WAREHOUSE',
       });
       if (!warehouseDelivery.ok) {
         console.error('Notification dispatch failed (inspections POST warehouse):', warehouseDelivery);
       }
       const qcDelivery = await sendLineToRoles(['QC'], qcText, {
         textOnly: true,
+        notificationType: 'INSPECT_NEW_QC',
       });
       if (!qcDelivery.ok) {
         console.error('Notification dispatch failed (inspections POST QC):', qcDelivery);
@@ -242,6 +244,7 @@ export async function PATCH(request: NextRequest) {
       const delivery = await sendLineToRoles(['EXECUTIVE'], `${text}\n\n🗂 รูปทั้งหมด: ${allImages.length} รูป (ส่ง preview สูงสุด 4 รูป)`, {
         images: allImages,
         maxImages: 4,
+        notificationType: 'QC_COMPLETE',
       });
       if (!delivery.ok) {
         console.error('Notification dispatch failed (inspections PATCH executive):', delivery);

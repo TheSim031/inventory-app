@@ -327,11 +327,8 @@
   box-shadow: none;
 }
 
-/* ─── Print-only blocks (hidden on screen) ─── */
-.printSlipHead,
-.printField,
-.printItemsTable,
-.printSignBlock {
+/* ─── Print-only cover-slip sheet (hidden on screen) ─── */
+.printSheet {
   display: none;
 }
 
@@ -340,93 +337,217 @@
   .itemGrid { grid-template-columns: 1fr; }
 }
 
-/* ─── Print mode (body.printing-internal-slips) ─── */
-:global(body.printing-internal-slips) .printSlipHead {
-  display: block;
-  text-align: center;
-  border-bottom: 3px solid #000;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-}
-:global(body.printing-internal-slips) .printSlipHead h2 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-:global(body.printing-internal-slips) .printSlipHead div {
-  font-size: 0.85rem;
-  color: #333;
-  margin-top: 0.25rem;
-}
-:global(body.printing-internal-slips) .printField {
-  display: block;
-  font-size: 0.95rem;
-  padding: 0.35rem 0;
-}
-:global(body.printing-internal-slips) .printField strong {
-  display: inline-block;
-  min-width: 110px;
-}
-:global(body.printing-internal-slips) .printItemsTable {
-  display: table;
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.75rem 0 1rem;
-}
-:global(body.printing-internal-slips) .printItemsTable th,
-:global(body.printing-internal-slips) .printItemsTable td {
-  border: 1.5px solid #000;
-  padding: 0.45rem 0.65rem;
-  text-align: left;
-  font-size: 0.9rem;
-}
-:global(body.printing-internal-slips) .printItemsTable th {
-  background: #f2f2f2;
-  font-weight: 800;
-  text-transform: uppercase;
-  font-size: 0.78rem;
-  letter-spacing: 0.05em;
-}
-:global(body.printing-internal-slips) .printSignBlock {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  margin-top: 1.5rem;
-}
-:global(body.printing-internal-slips) .printSignLine {
-  border-top: 1px solid #000;
-  padding-top: 0.5rem;
-  text-align: center;
-  margin-top: 2.25rem;
-  font-size: 0.85rem;
-}
-
+/* ─── Print mode ─────────────────────────────────────────────────────────
+   Exactly 8 cells per A4 page. The page (after 10mm @page margin) leaves
+   277mm × 190mm usable; the grid is 2 cols × N rows with every row fixed
+   at 68mm, so 4 rows fit per page (272mm) with a few mm of safety slack.
+   ──────────────────────────────────────────────────────────────────────*/
 @media print {
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 10mm;
   }
+
   .container {
     padding: 0;
     max-width: none;
+    min-height: 0;
   }
-  .slips {
+
+  /* Hide the on-screen editor entirely; only the print sheet renders. */
+  .slips { display: none !important; }
+
+  .printSheet {
+    display: block;
+    color: #000;
+  }
+
+  .printGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 68mm;
     gap: 0;
   }
-  /* Each slip prints on its own page so cuts are clean. */
-  :global(.internal-slip-print) {
-    page-break-after: always;
-    break-after: page;
-    padding: 0;
-    border: 0;
-    box-shadow: none;
-    margin: 0;
+
+  .printCell {
+    /* Solid border so warehouse staff can cut cleanly with scissors/cutter.
+       Negative margin collapses adjacent borders into a single shared line. */
+    border: 1.2px solid #000;
+    margin: -0.6px;
+    padding: 3.5mm 4mm;
+    height: 68mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    overflow: hidden;
+    color: #000;
+    background: #fff;
   }
-  :global(.internal-slip-print:last-child) {
-    page-break-after: auto;
-    break-after: auto;
+
+  .printCellBlank {
+    border: 1.2px dashed #999;
+    background:
+      repeating-linear-gradient(
+        45deg,
+        #fafafa 0,
+        #fafafa 3mm,
+        #fff 3mm,
+        #fff 6mm
+      );
   }
+
+  .printCellHeader {
+    background: #f6f6f6;
+    border: 2.5px solid #000;
+    text-align: center;
+    justify-content: center;
+    gap: 0.4mm;
+  }
+
+  .printCellHeaderTag {
+    font-size: 0.62rem;
+    color: #444;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
+    border-bottom: 1px dashed #999;
+  }
+
+  .printCellHeaderLabel {
+    font-size: 0.58rem;
+    color: #444;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-top: 1.2mm;
+  }
+
+  .printCellHeaderName {
+    font-size: 1.25rem;
+    font-weight: 900;
+    line-height: 1.1;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .printCellHeaderPurpose {
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.15;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .printCellTopRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.58rem;
+    color: #444;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .printCellSlipBadge {
+    background: #000;
+    color: #fff;
+    padding: 0.4mm 1.8mm;
+    border-radius: 2px;
+    font-size: 0.56rem;
+    letter-spacing: 0.06em;
+  }
+
+  .printCellIdx {
+    font-weight: 700;
+  }
+
+  /* Mini-header at the top of every item cell — repeats requester + purpose
+     so the cell isn't an anonymous floating item once cut from the sheet. */
+  .printCellSlipInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4mm;
+    margin-top: 1mm;
+    padding: 1.2mm 1.8mm;
+    background: #f6f6f6;
+    border: 1px dashed #888;
+    border-radius: 2px;
+  }
+
+  .printCellSlipInfoRow {
+    display: flex;
+    gap: 1.5mm;
+    align-items: baseline;
+    line-height: 1.1;
+  }
+
+  .printCellSlipInfoLabel {
+    font-size: 0.52rem;
+    color: #444;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    min-width: 13mm;
+    flex-shrink: 0;
+  }
+
+  .printCellSlipInfoValue {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #000;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-height: 2.4em;
+    overflow: hidden;
+  }
+
+  .printCellBody {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 1mm;
+    padding: 1mm 0;
+  }
+
+  .printCellItemName {
+    font-weight: 700;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-height: 3.2em;
+    overflow: hidden;
+  }
+
+  .printCellCategory {
+    font-size: 0.62rem;
+    color: #555;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.3mm 2mm;
+    border: 1px solid #bbb;
+    border-radius: 2px;
+    background: #fafafa;
+  }
+
+  .printCellQty {
+    font-size: 1.2rem;
+    font-weight: 900;
+    color: #DC2626;
+    text-align: center;
+    margin-top: auto;
+    padding-top: 1mm;
+    border-top: 2px solid #000;
+  }
+
   .fieldRow {
     grid-template-columns: 1fr;
     gap: 0;

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { appendHistoryOutRows, readItemsSheet } from '@/lib/googleSheets';
 import { sendUrgentZeroStockAlert } from '@/lib/limitStockNotify';
+import { isoForPickedDate } from '@/lib/dateTime';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -15,6 +16,7 @@ function requireAdminOrCreator(request: NextRequest): boolean {
 type Slip = {
   requester?: string;
   purpose?: string;
+  requestedDate?: string; // YYYY-MM-DD picked on the form
   items?: { code?: string; name?: string; quantity?: number }[];
 };
 
@@ -52,12 +54,14 @@ export async function POST(request: NextRequest) {
   const sanitized: {
     requester: string;
     purpose: string;
+    requestedDate: string;
     items: { code: string; name: string; quantity: number }[];
   }[] = [];
   for (let i = 0; i < slips.length; i++) {
     const slip = slips[i];
     const requester = String(slip.requester || '').trim();
     const purpose = String(slip.purpose || '').trim();
+    const requestedDate = String(slip.requestedDate || '').trim();
     const items = Array.isArray(slip.items) ? slip.items : [];
     if (!requester) {
       return NextResponse.json(
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
       }
       cleanItems.push({ code, name, quantity: qty });
     }
-    sanitized.push({ requester, purpose, items: cleanItems });
+    sanitized.push({ requester, purpose, requestedDate, items: cleanItems });
   }
 
   // Aggregate stock requirements across all slips so we fail fast.
@@ -129,7 +133,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Append OUT rows for each slip. We use a department label that flags the
-  // entry as an internal admin withdrawal.
+  // entry as an internal admin withdrawal. The per-slip picked date drives
+  // column A "วันที่" so back-dated entries land in the right month/year.
   let totalRows = 0;
   for (const slip of sanitized) {
     const result = await appendHistoryOutRows({
@@ -137,6 +142,7 @@ export async function POST(request: NextRequest) {
       department: 'เบิกภายใน (Admin)',
       purpose: slip.purpose,
       items: slip.items,
+      date: isoForPickedDate(slip.requestedDate),
     });
     if (!result.ok) {
       return NextResponse.json(

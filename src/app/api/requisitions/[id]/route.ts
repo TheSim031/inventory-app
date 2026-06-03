@@ -229,6 +229,10 @@ export async function PATCH(
       department: target.department,
       purpose: target.purpose,
       items: itemsToIssue,
+      // Preserve the date the user chose on /request — column A "วันที่" in
+      // the history sheet should reflect when the user wanted to record the
+      // movement, not when the picker happened to confirm it.
+      date: target.requestedAt || undefined,
     });
     if (!history.ok) {
       return NextResponse.json(
